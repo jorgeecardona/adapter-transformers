@@ -121,6 +121,24 @@ class AdapterConfig(Mapping):
 
 
 @dataclass
+class HsuConfig(AdapterConfig):
+    """
+    The adapter architecture proposed by Pfeiffer et. al., 2020. Described in https://arxiv.org/pdf/2005.00247.pdf.
+    """
+
+    original_ln_before: bool = True
+    original_ln_after: bool = True
+    residual_before_ln: bool = True
+    adapter_residual_before_ln: bool = False
+    ln_before: bool = False
+    ln_after: bool = False
+    mh_adapter: bool = False
+    output_adapter: bool = True
+    non_linearity: str = "rational:sigmoid"
+    reduction_factor: Union[int, Mapping] = 16
+    skip_linear_layers: bool = False
+
+@dataclass
 class PfeifferConfig(AdapterConfig):
     """
     The adapter architecture proposed by Pfeiffer et. al., 2020. Described in https://arxiv.org/pdf/2005.00247.pdf.
@@ -136,7 +154,7 @@ class PfeifferConfig(AdapterConfig):
     output_adapter: bool = True
     non_linearity: str = "relu"
     reduction_factor: Union[int, Mapping] = 16
-
+    skip_linear_layers: bool = False
 
 @dataclass
 class PfeifferInvConfig(PfeifferConfig):
@@ -176,11 +194,28 @@ class HoulsbyInvConfig(HoulsbyConfig):
     inv_adapter_reduction_factor: Optional[int] = 2
 
 
+@dataclass
+class RationalConfig(AdapterConfig):
+    original_ln_before: bool = True
+    original_ln_after: bool = True
+    residual_before_ln: bool = True
+    adapter_residual_before_ln: bool = False
+    ln_before: bool = False
+    ln_after: bool = False
+    mh_adapter: bool = False
+    output_adapter: bool = True
+    non_linearity: str = "rational:sigmoid"
+    reduction_factor: Union[int, Mapping] = 16
+    skip_linear_layers: bool = True
+    add_layer_norm_before: bool = False
+
 ADAPTER_CONFIG_MAP = {
     "pfeiffer": PfeifferConfig(),
     "houlsby": HoulsbyConfig(),
     "pfeiffer+inv": PfeifferInvConfig(),
     "houlsby+inv": HoulsbyInvConfig(),
+    "rational": RationalConfig(),
+    "hsu" : HsuConfig()
 }
 
 DEFAULT_ADAPTER_CONFIG = "pfeiffer"

@@ -3,6 +3,9 @@ import math
 import torch
 from torch import nn
 
+from rational.torch import Rational
+
+
 from .configuration import AdapterFusionConfig
 
 
@@ -12,6 +15,7 @@ class Activation_Function_Class(nn.Module):
     """
 
     def __init__(self, hidden_act):
+        super().__init__()
 
         if hidden_act.lower() == "relu":
             self.f = nn.functional.relu
@@ -37,8 +41,12 @@ class Activation_Function_Class(nn.Module):
             self.f = nn.functional.gelu
         elif hidden_act.lower() == "leakyrelu":
             self.f = nn.functional.leaky_relu
-
-        super().__init__()
+        elif hidden_act.lower().startswith('rational:'):
+            func_name = hidden_act.lower().split(':', 1)[1]
+            self.f = Rational(
+                cuda=True, trainable=True, train_numerator=True,
+                train_denominator=True, version="A", approx_func=func_name
+            )
 
     def forward(self, x):
         return self.f(x)
@@ -61,6 +69,7 @@ class Adapter(nn.Module):
         add_layer_norm_before=True,
         add_layer_norm_after=False,
         residual_before_ln=True,
+        skip_linear_layers=False,
     ):
         super().__init__()
 
@@ -68,6 +77,7 @@ class Adapter(nn.Module):
         self.add_layer_norm_before = add_layer_norm_before
         self.add_layer_norm_after = add_layer_norm_after
         self.residual_before_ln = residual_before_ln
+        self.skip_linear_layers = skip_linear_layers
 
         # list for all modules of the adapter, passed into nn.Sequential()
         seq_list = []
@@ -77,13 +87,14 @@ class Adapter(nn.Module):
             self.adapter_norm_before = nn.LayerNorm(self.input_size)
             seq_list.append(self.adapter_norm_before)
 
-        # if a downsample size is not passed, we just half the size of the original input
-        self.down_sample = down_sample
-        if down_sample is None:
-            self.down_sample = self.input_size // 2
+        if not self.skip_linear_layers:
+            # if a downsample size is not passed, we just half the size of the original input
+            self.down_sample = down_sample
+            if down_sample is None:
+                self.down_sample = self.input_size // 2
 
-        # Linear down projection of the input
-        seq_list.append(nn.Linear(self.input_size, self.down_sample))
+            # Linear down projection of the input
+            seq_list.append(nn.Linear(self.input_size, self.down_sample))
 
         # select non-linearity
         self.non_linearity = Activation_Function_Class(non_linearity.lower())
@@ -95,12 +106,15 @@ class Adapter(nn.Module):
         self.adapter_down = nn.Sequential(*seq_list)
 
         # Up projection to input size
-        self.adapter_up = nn.Linear(self.down_sample, self.input_size)
+        if not self.skip_linear_layers:
+            self.adapter_up = nn.Linear(self.down_sample, self.input_size)
 
-        # If we want to have a layer norm on output, we apply it later after a separate residual connection
-        # This means that we learn a new output layer norm, which replaces another layer norm learned in the bert layer
-        if self.add_layer_norm_after:
-            self.adapter_norm_after = nn.LayerNorm(self.input_size)
+            # If we want to have a layer norm on output, we apply it later after a separate residual connection
+            # This means that we learn a new output layer norm, which replaces another layer norm learned in the bert layer
+            if self.add_layer_norm_after:
+                self.adapter_norm_after = nn.LayerNorm(self.input_size)
+        else:
+            self.adapter_up = nn.Identity()
 
         # if we want to initialize with the bert strategy then this function is called for all the linear layers
         if init_bert_weights:
@@ -109,10 +123,12 @@ class Adapter(nn.Module):
 
     def forward(self, x, residual_input):  # , residual_input=None):
         down = self.adapter_down(x)
-
-        up = self.adapter_up(down)
-
-        output = up
+        if not self.skip_linear_layers:
+            up = self.adapter_up(down)
+            output = up
+        else:
+            up = down
+            output = down
 
         # apply residual connection before layer norm if configured in this way
         if self.residual_before_ln:
