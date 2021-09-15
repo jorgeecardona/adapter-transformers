@@ -4,8 +4,21 @@ from typing import List, Mapping, Union
 import torch
 from torch import nn
 
-from .composition import AdapterCompositionBlock, BatchSplit, Fuse, Parallel, Split, Stack, parse_composition
-from .modeling import Adapter, BertFusion
+from .composition import (
+    AdapterCompositionBlock,
+    BatchSplit,
+    Fuse,
+    Parallel,
+    Split,
+    Stack,
+    Switch,
+    parse_composition
+
+)
+from .modeling import Adapter, BertFusion, AdapterSwitch
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 class AdapterLayerBaseMixin(ABC):
@@ -38,6 +51,7 @@ class AdapterLayerBaseMixin(ABC):
     def _init_adapter_modules(self):
         self.adapters = nn.ModuleDict(dict())
         self.adapter_fusion_layer = nn.ModuleDict(dict())
+        self.adapter_switch_layer = nn.ModuleDict(dict())
 
     def add_adapter(self, adapter_name: str, layer_idx: int):
         self.layer_idx = layer_idx
@@ -72,6 +86,23 @@ class AdapterLayerBaseMixin(ABC):
         if adapter_name in self.adapters:
             del self.adapters[adapter_name]
 
+    def add_switch_layer(self, adapter_names: Union[List, str]):
+        logger.info(f"Add switch {adapter_names}.")
+
+        if not isinstance(adapter_names, list):
+            adapter_names = adapter_names.split(',')
+
+        # Get config and create switch.
+        config = self.config.adapters.get_switch(adapter_names)
+        adapter = AdapterSwitch(config, len(adapter_names))
+        adapter.train(self.training)
+        self.adapter_switch_layer[','.join(adapter_names)] = adapter
+
+    def delete_switch(self, adapter_names: Union[List, str]):
+        if not isinstance(adapter_names, list):
+            adapter_names = adapter_names.split(',')
+        del self.adapter_switch_layer[','.join(adapter_names)]
+
     def add_fusion_layer(self, adapter_names: Union[List, str]):
         """See BertModel.add_fusion_layer"""
         adapter_names = adapter_names if isinstance(adapter_names, list) else adapter_names.split(",")
@@ -90,7 +121,7 @@ class AdapterLayerBaseMixin(ABC):
         if adapter_names in self.adapter_fusion_layer:
             del self.adapter_fusion_layer[adapter_names]
 
-    def enable_adapters(self, adapter_setup: AdapterCompositionBlock, unfreeze_adapters: bool, unfreeze_fusion: bool):
+    def enable_adapters(self, adapter_setup: AdapterCompositionBlock, unfreeze_adapters: bool, unfreeze_fusion: bool, unfreeze_switches: bool):
         """
         Unfreezes a given list of adapters, the adapter fusion layer, or both
 
@@ -104,6 +135,7 @@ class AdapterLayerBaseMixin(ABC):
                 if adapter_name in self.adapters:
                     for param in self.adapters[adapter_name].parameters():
                         param.requires_grad = True
+
         if unfreeze_fusion:
             if isinstance(adapter_setup, Fuse):
                 if adapter_setup.name in self.adapter_fusion_layer:
@@ -113,6 +145,17 @@ class AdapterLayerBaseMixin(ABC):
                 if isinstance(sub_setup, Fuse):
                     if sub_setup.name in self.adapter_fusion_layer:
                         for param in self.adapter_fusion_layer[sub_setup.name].parameters():
+                            param.requires_grad = True
+
+        if unfreeze_switches:
+            if isinstance(adapter_setup, Switch):
+                if adapter_setup.name in self.adapter_switch_layer:
+                    for param in self.adapter_switch_layer[adapter_setup.name].parameters():
+                        param.requires_grad = True
+            for sub_setup in adapter_setup:
+                if isinstance(sub_setup, Switch):
+                    if sub_setup.name in self.adapter_switch_layer:
+                        for param in self.adapter_switch_layer[sub_setup.name].parameters():
                             param.requires_grad = True
 
     def get_adapter_preparams(
@@ -167,6 +210,7 @@ class AdapterLayerBaseMixin(ABC):
                         adapter_stack_layer.__class__.__name__, lvl
                     )
                 )
+
             # Case 1: We have a nested fusion layer -> call fusion method
             if isinstance(adapter_stack_layer, Fuse):
                 hidden_states = self.adapter_fusion(adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1)
@@ -196,6 +240,35 @@ class AdapterLayerBaseMixin(ABC):
         # If we got here, we either had another nested composition block
         # or no adapter was found. In both cases, we don't need to set the second return value for fusion
         return hidden_states, None, input_tensor
+
+    def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
+        # config of _last_ fused adapter is significant
+        adapter_config = self.config.adapters.get(adapter_setup.last())
+        switch_config = self.config.adapters.get_switch(adapter_setup.name)
+
+        hidden_states, query, residual = self.get_adapter_preparams(
+            adapter_config, hidden_states, input_tensor
+        )
+
+        up_list = []
+        for adapter_block in adapter_setup:
+            if isinstance(adapter_block, Stack):
+                _, up, _ = self.adapter_stack(
+                    adapter_block, hidden_states, input_tensor, lvl=lvl + 1
+                )
+                if up is not None:  # could be none if stack is empty
+                    up_list.append(up)
+            elif adapter_block in self.adapters:
+                adapter_layer = self.adapters[adapter_block]
+                _, _, up = adapter_layer(hidden_states, residual_input=residual)
+                up_list.append(up)
+
+        if len(up_list) > 0:
+            up_list = torch.stack(up_list)
+            up_list = up_list.permute(1, 2, 0, 3)
+            hidden_states = self.adapter_switch_layer[adapter_setup.name](up_list)
+
+        return hidden_states
 
     def adapter_fusion(self, adapter_setup: Fuse, hidden_states, input_tensor, lvl=0):
         """
@@ -449,26 +522,47 @@ class AdapterLayerBaseMixin(ABC):
         )
         if not skip_adapters and (len(set(self.adapters.keys()) & adapter_setup.flatten()) > 0):
             if isinstance(adapter_setup, Stack):
-                hidden_states, _, input_tensor = self.adapter_stack(adapter_setup, hidden_states, input_tensor)
+                hidden_states, _, input_tensor = self.adapter_stack(
+                    adapter_setup, hidden_states, input_tensor
+                )
+
             elif isinstance(adapter_setup, Fuse):
-                hidden_states = self.adapter_fusion(adapter_setup, hidden_states, input_tensor)
+                hidden_states = self.adapter_fusion(
+                    adapter_setup, hidden_states, input_tensor
+                )
+
             elif isinstance(adapter_setup, Split):
-                hidden_states = self.adapter_split(adapter_setup, hidden_states, input_tensor)
+                hidden_states = self.adapter_split(
+                    adapter_setup, hidden_states, input_tensor
+                )
+
             elif isinstance(adapter_setup, Parallel):
-                # notice that we are overriding input tensor here to keep the same dim as hidden_states for the residual
-                # in case we were blowing up the batch for parallel processing of multiple adapters for the same input
-                hidden_states, input_tensor = self.adapter_parallel(adapter_setup, hidden_states, input_tensor)
+                # Notice that we are overriding input tensor here to
+                # keep the same dim as hidden_states for the residual
+                # in case we were blowing up the batch for parallel
+                # processing of multiple adapters for the same input
+                hidden_states, input_tensor = self.adapter_parallel(
+                    adapter_setup, hidden_states, input_tensor
+                )
+
             elif isinstance(adapter_setup, BatchSplit):
-                hidden_states = self.adapter_batchsplit(adapter_setup, hidden_states, input_tensor)
+                hidden_states = self.adapter_batchsplit(
+                    adapter_setup, hidden_states, input_tensor
+                )
+
+            elif isinstance(adapter_setup, Switch):
+                hidden_states = self.adapter_switch(
+                    adapter_setup, hidden_states, input_tensor
+                )
+
             else:
                 raise ValueError(f"Invalid adapter setup {adapter_setup}")
 
             last_config = self.config.adapters.get(adapter_setup.last())
             if last_config["original_ln_after"]:
+                hidden_states = hidden_states + input_tensor
                 if self.transformer_layer_norm:
-                    hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)
-                else:
-                    hidden_states = hidden_states + input_tensor
+                    hidden_states = self.transformer_layer_norm(hidden_states)
 
         elif self.transformer_layer_norm:
             hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)

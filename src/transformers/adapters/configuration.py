@@ -11,43 +11,11 @@ from .utils import get_adapter_config_hash, resolve_adapter_config
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AdapterConfig(Mapping):
-    """
-    Base class that models the architecture of an adapter.
+class BaseAdapterConfig(Mapping):
 
-    Args:
-            reduction_factor (:obj:`int` or :obj:`Mapping`): Either an integer specifying the reduction factor for all layers
-                or a mapping specifying the reduction_factor for individual layers. If not all layers are represented
-                in the mapping a default value should be given e.g. {'1': 8, '6': 32, 'default': 16}
-    """
-
-    original_ln_before: bool
-    original_ln_after: bool
-    residual_before_ln: bool
-    adapter_residual_before_ln: bool
-    ln_before: bool
-    ln_after: bool
-    mh_adapter: bool
-    output_adapter: bool
-    non_linearity: str
-    reduction_factor: Union[int, Mapping]
-    inv_adapter: Optional[str] = None
-    inv_adapter_reduction_factor: Optional[int] = None
-    cross_adapter: bool = False
-    leave_out: List[int] = field(default_factory=list)
-
-    # We want to emulate a simple form of immutability while keeping the ability to add custom attributes.
-    # Therefore, we don't allow changing attribute values if set once.
     def __setattr__(self, name, value):
         if name in self.__dict__:
             raise FrozenInstanceError()
-        elif name == "invertible_adapter":
-            # This is for backwards compatibility. In v1, invertible adapters were specified in a nested config dict.
-            # Now, we have two config keys directly in the adapter config.
-            if value:
-                object.__setattr__(self, "inv_adapter", value["block_type"])
-                object.__setattr__(self, "inv_adapter_reduction_factor", value["reduction_factor"])
         else:
             object.__setattr__(self, name, value)
 
@@ -71,20 +39,69 @@ class AdapterConfig(Mapping):
 
     @classmethod
     def from_dict(cls, config):
-        if isinstance(config, AdapterConfig):
+
+        if isinstance(config, cls):
             return config
 
         # the constructor does not accept additional kwargs, so add them separately
         defined_kwargs, new_kwargs = {}, {}
+
         for k, v in config.items():
             if k in cls.__annotations__:
                 defined_kwargs[k] = v
             else:
                 new_kwargs[k] = v
+
         obj = cls(**defined_kwargs)
+
         for k, v in new_kwargs.items():
             setattr(obj, k, v)
+
         return obj
+
+
+@dataclass
+class AdapterConfig(BaseAdapterConfig):
+    """
+    Base class that models the architecture of an adapter.
+
+    Args:
+        reduction_factor (:obj:`int` or :obj:`Mapping`): Either an integer
+            specifying the reduction factor for all layers or a mapping
+            specifying the reduction_factor for individual layers.
+            If not all layers are represented in the mapping a default value
+            should be given e.g. {'1': 8, '6': 32, 'default': 16}
+    """
+
+    original_ln_before: bool
+    original_ln_after: bool
+    residual_before_ln: bool
+    adapter_residual_before_ln: bool
+    ln_before: bool
+    ln_after: bool
+    mh_adapter: bool
+    output_adapter: bool
+    non_linearity: str
+    reduction_factor: Union[int, Mapping]
+    inv_adapter: Optional[str] = None
+    inv_adapter_reduction_factor: Optional[int] = None
+    cross_adapter: bool = False
+    leave_out: List[int] = field(default_factory=list)
+
+    # We want to emulate a simple form of immutability while keeping the
+    # ability to add custom attributes.
+    # Therefore, we don't allow changing attribute values if set once.
+    def __setattr__(self, name, value):
+        if name in self.__dict__:
+            raise FrozenInstanceError()
+        elif name == "invertible_adapter":
+            # This is for backwards compatibility. In v1, invertible adapters were specified in a nested config dict.
+            # Now, we have two config keys directly in the adapter config.
+            if value:
+                object.__setattr__(self, "inv_adapter", value["block_type"])
+                object.__setattr__(self, "inv_adapter_reduction_factor", value["reduction_factor"])
+        else:
+            object.__setattr__(self, name, value)
 
     @classmethod
     def load(cls, config: Union[dict, str], download_kwargs=None, **kwargs):
@@ -121,6 +138,33 @@ class AdapterConfig(Mapping):
 
 
 @dataclass
+class AdapterSwitchConfig(BaseAdapterConfig):
+
+    # Activate the temperature for the softmax.
+    temperature: bool = True
+
+    # Switch strategy.
+    strategy: str = 'default'
+
+    @classmethod
+    def load(cls, config: Union[dict, str], **kwargs):
+
+        # currently storing AdapterFusion weights on AdapterHub is not supported.
+        config_dict = resolve_adapter_config(
+            config,
+            local_map=ADAPTERSWITCH_CONFIG_MAP,
+            try_loading_from_hub=False
+        )
+
+        # convert back to dict to allow attr overrides
+        if isinstance(config_dict, AdapterSwitchConfig):
+            config_dict = config_dict.to_dict()
+
+        config_dict.update(kwargs)
+        return AdapterSwitchConfig.from_dict(config_dict)
+
+
+@dataclass
 class HsuConfig(AdapterConfig):
     """
     The adapter architecture proposed by Pfeiffer et. al., 2020. Described in https://arxiv.org/pdf/2005.00247.pdf.
@@ -137,6 +181,7 @@ class HsuConfig(AdapterConfig):
     non_linearity: str = "rational:sigmoid"
     reduction_factor: Union[int, Mapping] = 16
     skip_linear_layers: bool = False
+
 
 @dataclass
 class PfeifferConfig(AdapterConfig):
@@ -155,6 +200,7 @@ class PfeifferConfig(AdapterConfig):
     non_linearity: str = "relu"
     reduction_factor: Union[int, Mapping] = 16
     skip_linear_layers: bool = False
+
 
 @dataclass
 class PfeifferInvConfig(PfeifferConfig):
@@ -209,6 +255,7 @@ class RationalConfig(AdapterConfig):
     skip_linear_layers: bool = True
     add_layer_norm_before: bool = False
 
+
 ADAPTER_CONFIG_MAP = {
     "pfeiffer": PfeifferConfig(),
     "houlsby": HoulsbyConfig(),
@@ -235,6 +282,10 @@ class ModelAdaptersConfig(Collection):
 
         self.fusions: Mapping[str, str] = kwargs.pop("fusions", {})
         self.fusion_config_map = kwargs.pop("fusion_config_map", {})
+
+        # Switches.
+        self.switches: Mapping[str, str] = kwargs.pop("switches", {})
+        self.switch_config_map = kwargs.pop("switch_config_map", {})
 
         # TODO-V2 Save this with config?
         self.active_setup: Optional[AdapterCompositionBlock] = None
@@ -320,6 +371,59 @@ class ModelAdaptersConfig(Collection):
             config = None
         return config
 
+    def get_switch(self, name: Union[str, List[str]]) -> Optional[dict]:
+        """
+        Gets the config dictionary for a given AdapterSwitch.
+        """
+
+        if isinstance(name, list):
+            name = ",".join(name)
+
+        if name in self.switches:
+            config_name = self.switches[name]
+            if config_name in self.switch_config_map:
+                config = self.switch_config_map.get(config_name, None)
+            else:
+                config = ADAPTERSWITCH_CONFIG_MAP.get(config_name, None)
+        else:
+            config = None
+
+        return config
+
+    def add_switch(self, name: Union[str, List[str]], config: Union[dict]):
+        """
+        Adds a new AdapterSwitch.
+        """
+
+        if isinstance(name, list):
+            name = ','.join(name)
+
+        if name in self.switches:
+            raise ValueError(
+                f"An AdapterSwitch with the name '{name}' has already been added."
+            )
+
+        if config is None:
+            config = DEFAULT_ADAPTERSWITCH_CONFIG
+
+        if isinstance(config, dict):
+            config = AdapterSwitchConfig.from_dict(config)
+
+        if isinstance(config, str):
+            if config not in ADAPTERSWITCH_CONFIG_MAP and \
+               config not in self.fusion_config_map:
+                raise ValueError(f"Invalid AdapterFusion config identifier '{config}'.")
+            config_name = config
+
+        elif isinstance(config, Mapping):
+            config_name = get_adapter_config_hash(config)
+            self.switch_config_map[config_name] = config
+        else:
+            raise ValueError("Invalid AdapterSwitch config: {}".format(config))
+
+        self.switches[name] = config_name
+        logger.info(f"Adding AdapterSwitch '{name}'.")
+
     def add_fusion(self, fusion_name: Union[str, List[str]], config: Optional[Union[str, dict]] = None):
         """
         Adds a new AdapterFusion.
@@ -395,7 +499,7 @@ def build_full_config(adapter_config, model_config, save_id2label=False, **kwarg
 
 
 @dataclass
-class AdapterFusionConfig(Mapping):
+class AdapterFusionConfig(BaseAdapterConfig):
     """Base class that models the architecture of an adapter fusion layer."""
 
     key: bool
@@ -407,36 +511,6 @@ class AdapterFusionConfig(Mapping):
     temperature: bool
     value_before_softmax: bool
     value_initialized: str
-
-    # We want to emulate a simple form of immutability while keeping the ability to add custom attributes.
-    # Therefore, we don't allow changing attribute values if set once.
-    def __setattr__(self, name, value):
-        if name in self.__dict__:
-            raise FrozenInstanceError()
-        else:
-            object.__setattr__(self, name, value)
-
-    def __delattr__(self, name):
-        raise FrozenInstanceError()
-
-    def __getitem__(self, key):
-        return self.__dict__[key]
-
-    def __iter__(self):
-        return iter(self.__dict__)
-
-    def __len__(self):
-        return len(self.__dict__)
-
-    def to_dict(self):
-        return asdict(self)
-
-    def replace(self, **changes):
-        return replace(self, **changes)
-
-    @classmethod
-    def from_dict(cls, config):
-        return cls(**config)
 
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):
@@ -497,6 +571,15 @@ class DynamicAdapterFusionConfig(AdapterFusionConfig):
     value_initialized: str = True
 
 
-ADAPTERFUSION_CONFIG_MAP = {"static": StaticAdapterFusionConfig(), "dynamic": DynamicAdapterFusionConfig()}
+ADAPTERFUSION_CONFIG_MAP = {
+    "static": StaticAdapterFusionConfig(),
+    "dynamic": DynamicAdapterFusionConfig()
+}
 
 DEFAULT_ADAPTERFUSION_CONFIG = "dynamic"
+
+ADAPTERSWITCH_CONFIG_MAP = {
+    'default': AdapterSwitchConfig()
+}
+
+DEFAULT_ADAPTERSWITCH_CONFIG = "default"

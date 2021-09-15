@@ -6,7 +6,14 @@ from typing import List, Optional, Union
 
 from torch import nn
 
-from .composition import AdapterCompositionBlock, Fuse, Stack, parse_composition
+from .composition import (
+    AdapterCompositionBlock,
+    Fuse,
+    Stack,
+    Switch,
+    parse_composition,
+)
+
 from .configuration import AdapterConfig, AdapterFusionConfig, ModelAdaptersConfig, get_adapter_config_hash
 from .hub_mixin import PushAdapterToHubMixin
 from .loading import AdapterFusionLoader, AdapterLoader, PredictionHeadLoader, WeightsLoader
@@ -126,9 +133,14 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         # Initialize adapters from config
         for adapter_name in self.config.adapters:
             self._add_adapter(adapter_name)
+
         # Initialize fusion from config
         for fusion_name in self.config.adapters.fusions:
             self._add_fusion_layer(fusion_name)
+
+        # Initialize fusion from config
+        for name in self.config.adapters.switches:
+            self._add_switch_layer(name)
 
     # These methods have to be implemented by every deriving class:
 
@@ -151,11 +163,20 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         pass
 
     @abstractmethod
+    def train_adapter_switch(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
+        """Sets the model into mode for training of adapter switch determined by a list of adapter names."""
+        pass
+
+    @abstractmethod
     def _add_adapter(self, adapter_name):
         pass
 
     @abstractmethod
     def _add_fusion_layer(self, adapter_names):
+        pass
+
+    @abstractmethod
+    def _add_switch_layer(self, adapter_names):
         pass
 
     def has_adapters(self):
@@ -174,6 +195,7 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
 
     @active_adapters.setter
     def active_adapters(self, adapter_setup: Union[list, AdapterCompositionBlock]):
+        logger.info("Setting active adapters.")
         self.set_active_adapters(adapter_setup)
 
     def set_active_adapters(
@@ -229,6 +251,24 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         adapter_fusion_config = AdapterFusionConfig.from_dict(adapter_fusion_config).replace(**override_kwargs)
         self.add_adapter_fusion(adapter_names, adapter_fusion_config)
 
+    def add_adapter_switch(
+            self,
+            adapter: Switch,
+            config=None,
+            overwrite_ok: bool = False,
+            set_active: bool = False
+    ):
+        logger.info(f"Add adapter switch {adapter.names}.")
+
+        if overwrite_ok and self.config.adapters.get_switch(adapter.names) is not None:
+            self.delete_adapter_switch(adapter.names)
+
+        self.config.adapters.add_switch(adapter.names, config=config)
+        self.base_model._add_switch_layer(adapter.names)
+
+        if set_active:
+            self.set_active_adapters(adapter)
+
     def add_adapter_fusion(
         self,
         adapter_names: Union[Fuse, list],
@@ -252,13 +292,16 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         # TODO-V2 Allow nested items or directly pass Fuse block?
         if isinstance(adapter_names, Fuse):
             adapter_names = adapter_names.children
+
         if isinstance(config, dict):
             config = AdapterFusionConfig.from_dict(config)  # ensure config is ok and up-to-date
         # In case adapter already exists and we allow overwriting, explicitly delete the existing one first
         if overwrite_ok and self.config.adapters.get_fusion(adapter_names) is not None:
             self.delete_adapter_fusion(adapter_names)
+
         self.config.adapters.add_fusion(adapter_names, config=config)
         self.base_model._add_fusion_layer(adapter_names)
+
         if set_active:
             if not isinstance(adapter_names, list):
                 adapter_names = adapter_names.split(",")
@@ -559,12 +602,17 @@ class ModelWithHeadsAdaptersMixin(ModelAdaptersMixin):
     def train_adapter_fusion(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
         """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
         self.base_model.train_adapter_fusion(adapter_setup, unfreeze_adapters=unfreeze_adapters)
-
+    def train_adapter_switch(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
+        """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
+        self.base_model.train_adapter_switch(adapter_setup, unfreeze_adapters=unfreeze_adapters)
     def _add_adapter(self, adapter_name):
         self.base_model._add_adapter(adapter_name)
 
     def _add_fusion_layer(self, adapter_names):
         self.base_model._add_fusion_layer(adapter_names)
+
+    def _add_switch_layer(self, adapter_names):
+        self.base_model._add_switch_layer(adapter_names)
 
     def save_head(self, save_directory: str, head_name: str = None):
         loader = PredictionHeadLoader(self)

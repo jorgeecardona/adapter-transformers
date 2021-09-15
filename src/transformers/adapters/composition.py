@@ -42,15 +42,23 @@ class AdapterCompositionBlock(Sequence):
     def flatten(self) -> Set[str]:
         return set(itertools.chain(*[[b] if isinstance(b, str) else b.flatten() for b in self.children]))
 
+    # TODO-V2 pull this up to all block classes?
+    @property
+    def name(self):
+        return ",".join(self.names)
+
+    @property
+    def names(self):
+        return [c if isinstance(c, str) else c.last() for c in self.children]
+
 
 class Parallel(AdapterCompositionBlock):
-    def __init__(self, *parallel_adapters: List[str]):
-        """
-        Can be used to perform inference for multiple tasks (i.e., adapters) in parallel (for the same input).
+    """
+    Can be used to perform inference for multiple tasks (i.e., adapters)
+    in parallel (for the same input).
 
-        See AdapterDrop https://arxiv.org/abs/2010.11918
-        """
-        super().__init__(*parallel_adapters)
+    See AdapterDrop https://arxiv.org/abs/2010.11918
+    """
 
     @property
     def parallel_channels(self):
@@ -58,18 +66,15 @@ class Parallel(AdapterCompositionBlock):
 
 
 class Stack(AdapterCompositionBlock):
-    def __init__(self, *stack_layers: List[Union[AdapterCompositionBlock, str]]):
-        super().__init__(*stack_layers)
+    pass
 
 
 class Fuse(AdapterCompositionBlock):
-    def __init__(self, *fuse_stacks: List[Union[AdapterCompositionBlock, str]]):
-        super().__init__(*fuse_stacks)
+    pass
 
-    # TODO-V2 pull this up to all block classes?
-    @property
-    def name(self):
-        return ",".join([c if isinstance(c, str) else c.last() for c in self.children])
+
+class Switch(AdapterCompositionBlock):
+    pass
 
 
 class Split(AdapterCompositionBlock):
@@ -94,6 +99,7 @@ ALLOWED_NESTINGS = {
     Split: [str, Split, Stack, BatchSplit],
     Parallel: [str, Stack, BatchSplit],
     BatchSplit: [str, Stack, Split, BatchSplit],
+    Switch: [str, Stack]
 }
 
 # Some composition blocks might not be supported by all models.
@@ -104,8 +110,14 @@ SUPPORTED_MODELS = {
 
 
 def validate_composition(adapter_composition: AdapterCompositionBlock, level=0, model_type=None):
-    if level > 1 and not (isinstance(adapter_composition, Stack) or isinstance(adapter_composition, str)):
-        raise ValueError(f"Adapter setup is too deep. Cannot have {adapter_composition} at level {level}.")
+    if level > 1 and \
+       not (isinstance(adapter_composition, Stack) or \
+            isinstance(adapter_composition, str)):
+        raise ValueError(
+            f"Adapter setup is too deep. Cannot have {adapter_composition}"
+            " at level {level}."
+        )
+
     if isinstance(adapter_composition, AdapterCompositionBlock):
         block_type = type(adapter_composition)
         if model_type and block_type in SUPPORTED_MODELS:

@@ -6,7 +6,13 @@ from torch import nn
 from rational.torch import Rational
 
 
-from .configuration import AdapterFusionConfig
+from .configuration import (
+    AdapterFusionConfig,
+    AdapterSwitchConfig
+)
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Activation_Function_Class(nn.Module):
@@ -254,7 +260,6 @@ class BertFusion(nn.Module):
 
 # Invertible Adapters
 
-
 def get_subnet_constructor(non_linearity, reduction_factor):
     def subnet(dims_in, dims_out):
         return nn.Sequential(
@@ -378,3 +383,64 @@ class GLOWCouplingBlock(nn.Module):
 
     def output_dims(self, input_dims):
         return input_dims
+
+
+class AdapterSwitch(nn.Module):
+
+    config: AdapterSwitchConfig
+
+    recent_weights = None
+
+    def __init__(self, config: AdapterSwitchConfig, num: int):
+        super().__init__()
+
+        self.config = config
+
+        # Keep the probabilities as a separate parameters.
+        self.register_parameter(
+            'probs', nn.Parameter(torch.tensor([1 / num] * num))
+        )
+
+        if self.config["temperature"]:
+            self.T = 50.0
+        else:
+            self.T = 1.0
+
+        self.annealing_factor = 0.999
+
+        self.reduction = self.T / 10000.0
+
+        # Distribution used.
+        self.gumbel = torch.distributions.Gumbel(0, 1)
+
+    def forward(self, x):
+
+        batch_size, seq_length, num_classes, hidden_dim_size = x.size()
+
+        if self.config.strategy == 'global':
+            sample_size = [batch_size, num_classes]
+        elif self.config.strategy == 'seq_length':
+            sample_size = [batch_size, seq_length, num_classes]
+        else:
+            sample_size = [batch_size, seq_length, hidden_dim_size, num_classes]
+
+        # Sample from Gumbel.
+        g = self.gumbel.sample(sample_size).to(self.probs.device)
+
+        # Compute the weights of the convex sum.
+        weights = torch.softmax((g + self.probs) / self.T, dim=-1)
+
+        if not self.training:
+            self.recent_weights = weights.detach().cpu().numpy()
+
+        if self.training:
+            self.T = max(self.T * self.annealing_factor, 0.001)
+        #    self.T = max(self.T - self.reduction, .01)
+
+        # Compute the output.
+        if self.config.strategy == 'global':
+            return torch.einsum('ijkl,ik->ijl', x, weights)
+        elif self.config.strategy == 'seq_length':
+            return torch.einsum('ijkl,ijk->ijl', x, weights)
+        else:
+            return torch.einsum('ijkl,ijlk->ijl', x, weights)
