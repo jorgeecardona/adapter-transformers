@@ -94,9 +94,11 @@ class Adapter(nn.Module):
             seq_list.append(self.adapter_norm_before)
 
         if not self.skip_linear_layers:
+
             # if a downsample size is not passed, we just half the size of the original input
             self.down_sample = down_sample
-            if down_sample is None:
+
+            if self.down_sample is None:
                 self.down_sample = self.input_size // 2
 
             # Linear down projection of the input
@@ -401,14 +403,11 @@ class AdapterSwitch(nn.Module):
             'probs', nn.Parameter(torch.tensor([1 / num] * num))
         )
 
+        # Initial value of temperature depends on config.
+        T = 1.0
         if self.config["temperature"]:
-            self.T = 50.0
-        else:
-            self.T = 1.0
-
-        self.annealing_factor = 0.999
-
-        self.reduction = self.T / 10000.0
+            T = 50.0
+        self.register_buffer('temperature', torch.tensor([T]))
 
         # Distribution used.
         self.gumbel = torch.distributions.Gumbel(0, 1)
@@ -428,14 +427,10 @@ class AdapterSwitch(nn.Module):
         g = self.gumbel.sample(sample_size).to(self.probs.device)
 
         # Compute the weights of the convex sum.
-        weights = torch.softmax((g + self.probs) / self.T, dim=-1)
+        weights = torch.softmax((g + self.probs) / self.temperature[0], dim=-1)
 
         if not self.training:
             self.recent_weights = weights.detach().cpu().numpy()
-
-        if self.training:
-            self.T = max(self.T * self.annealing_factor, 0.001)
-        #    self.T = max(self.T - self.reduction, .01)
 
         # Compute the output.
         if self.config.strategy == 'global':
