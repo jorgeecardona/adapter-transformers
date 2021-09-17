@@ -332,6 +332,9 @@ class ModelAdaptersConfig(Collection):
             adapter_name (str): The name of the adapter.
             config (Optional[Union[str, dict]], optional): The adapter config. Defaults to None.
         """
+
+        logger.info(f"Adding adapter '{adapter_name}' ...")
+
         if adapter_name in self.adapters:
             raise ValueError(f"An adapter with the name '{adapter_name}' has already been added.")
         if config is None:
@@ -347,7 +350,6 @@ class ModelAdaptersConfig(Collection):
         else:
             raise ValueError("Invalid adapter config: {}".format(config))
         self.adapters[adapter_name] = config_name
-        logger.info(f"Adding adapter '{adapter_name}'.")
 
     def get_fusion(self, fusion_name: Union[str, List[str]]) -> Optional[dict]:
         """

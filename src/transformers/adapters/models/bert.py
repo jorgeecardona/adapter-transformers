@@ -41,9 +41,9 @@ class BertOutputAdaptersMixin(AdapterLayerBaseMixin):
 class BertLayerAdaptersMixin:
     """Adds adapters to the BertLayer module."""
 
-    def add_switch_layer(self, adapter_names):
-        self.attention.output.add_switch_layer(adapter_names)
-        self.output.add_switch_layer(adapter_names)
+    def add_switch_layer(self, adapter_names, layer_idx: int):
+        self.attention.output.add_switch_layer(adapter_names, layer_idx)
+        self.output.add_switch_layer(adapter_names, layer_idx)
 
     def add_fusion_layer(self, adapter_names):
         self.attention.output.add_fusion_layer(adapter_names)
@@ -76,8 +76,16 @@ class BertEncoderAdaptersMixin:
     """Adds adapters to the BertEncoder module."""
 
     def add_switch_layer(self, adapter_names):
-        for layer in self.layer:
-            layer.add_switch_layer(adapter_names)
+        logger.info(f"Add switch {adapter_names}")
+
+        adapter_config = self.config.adapters.get(adapter_names[-1])
+        leave_out = adapter_config.get("leave_out", [])
+
+        logger.info(leave_out)
+
+        for i, layer in enumerate(self.layer):
+            if i not in leave_out:
+                layer.add_switch_layer(adapter_names, i)
 
     def add_fusion_layer(self, adapter_names):
         for layer in self.layer:
@@ -145,7 +153,6 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
     def train_adapter_switch(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
         """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
         self.train()
-        print("tas: ", self.training)
         self.freeze_model(True)
         adapter_setup = parse_composition(adapter_setup)
         self.encoder.enable_adapters(adapter_setup, unfreeze_adapters, False, True)
@@ -159,7 +166,6 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
         self.add_invertible_adapter(adapter_name)
 
     def _add_switch_layer(self, adapter_names):
-        logger.info("_add_switch_layer")
         self.encoder.add_switch_layer(adapter_names)
 
     def _add_fusion_layer(self, adapter_names):

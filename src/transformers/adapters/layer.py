@@ -86,8 +86,10 @@ class AdapterLayerBaseMixin(ABC):
         if adapter_name in self.adapters:
             del self.adapters[adapter_name]
 
-    def add_switch_layer(self, adapter_names: Union[List, str]):
-        logger.info(f"Add switch {adapter_names}.")
+    def add_switch_layer(self, adapter_names: Union[List, str], layer_idx: int):
+        logger.info(f"Add switch {adapter_names} at layer {layer_idx}.")
+
+        self.layer_idx = layer_idx
 
         if not isinstance(adapter_names, list):
             adapter_names = adapter_names.split(',')
@@ -121,6 +123,11 @@ class AdapterLayerBaseMixin(ABC):
         if adapter_names in self.adapter_fusion_layer:
             del self.adapter_fusion_layer[adapter_names]
 
+    def _unfreeze_module(self, module: nn.Module):
+        for name, param in module.named_parameters():
+            logger.info(f"Unfreezing {name}.")
+            param.requires_grad = True
+
     def enable_adapters(self, adapter_setup: AdapterCompositionBlock, unfreeze_adapters: bool, unfreeze_fusion: bool, unfreeze_switches: bool):
         """
         Unfreezes a given list of adapters, the adapter fusion layer, or both
@@ -133,30 +140,33 @@ class AdapterLayerBaseMixin(ABC):
         if unfreeze_adapters:
             for adapter_name in adapter_setup.flatten():
                 if adapter_name in self.adapters:
-                    for param in self.adapters[adapter_name].parameters():
-                        param.requires_grad = True
+                    self._unfreeze_module(self.adapters[adapter_name])
 
         if unfreeze_fusion:
             if isinstance(adapter_setup, Fuse):
                 if adapter_setup.name in self.adapter_fusion_layer:
-                    for param in self.adapter_fusion_layer[adapter_setup.name].parameters():
-                        param.requires_grad = True
+                    self._unfreeze_module(
+                        self.adapter_fusion_layer[adapter_setup.name]
+                    )
             for sub_setup in adapter_setup:
                 if isinstance(sub_setup, Fuse):
                     if sub_setup.name in self.adapter_fusion_layer:
-                        for param in self.adapter_fusion_layer[sub_setup.name].parameters():
-                            param.requires_grad = True
+                        self._unfreeze_module(
+                            self.adapter_fusion_layer[sub_setup.name]
+                        )
 
         if unfreeze_switches:
             if isinstance(adapter_setup, Switch):
                 if adapter_setup.name in self.adapter_switch_layer:
-                    for param in self.adapter_switch_layer[adapter_setup.name].parameters():
-                        param.requires_grad = True
+                    self._unfreeze_module(
+                        self.adapter_switch_layer[adapter_setup.name]
+                    )
             for sub_setup in adapter_setup:
                 if isinstance(sub_setup, Switch):
                     if sub_setup.name in self.adapter_switch_layer:
-                        for param in self.adapter_switch_layer[sub_setup.name].parameters():
-                            param.requires_grad = True
+                        self._unfreeze_module(
+                            self.adapter_switch_layer[sub_setup.name]
+                        )
 
     def get_adapter_preparams(
         self,
