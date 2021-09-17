@@ -400,7 +400,7 @@ class AdapterSwitch(nn.Module):
 
         # Keep the probabilities as a separate parameters.
         self.register_parameter(
-            'probs', nn.Parameter(torch.tensor([1 / num] * num))
+            'probs', nn.Parameter(torch.ones(num) / num)
         )
 
         # Initial value of temperature depends on config.
@@ -427,7 +427,7 @@ class AdapterSwitch(nn.Module):
         g = self.gumbel.sample(sample_size).to(self.probs.device)
 
         # Compute the weights of the convex sum.
-        weights = torch.softmax((g + self.probs) / self.temperature[0], dim=-1)
+        weights = torch.softmax((g + torch.log(self.probs)) / self.temperature[0], dim=-1)
 
         if not self.training:
             self.recent_weights = weights.detach().cpu().numpy()
