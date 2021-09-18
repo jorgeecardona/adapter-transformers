@@ -398,10 +398,8 @@ class AdapterSwitch(nn.Module):
 
         self.config = config
 
-        # Keep the probabilities as a separate parameters.
-        self.register_parameter(
-            'probs', nn.Parameter(torch.ones(num) / num)
-        )
+        # Keep the logits of probabilities as a separate parameters.
+        self.register_parameter('switch_logits', nn.Parameter(torch.zeros(num)))
 
         # Initial value of temperature depends on config.
         T = 1.0
@@ -411,6 +409,10 @@ class AdapterSwitch(nn.Module):
 
         # Distribution used.
         self.gumbel = torch.distributions.Gumbel(0, 1)
+
+    @property
+    def probs(self):
+        return torch.softmax(self.switch_logits, dim=-1)
 
     def forward(self, x):
 
@@ -427,7 +429,7 @@ class AdapterSwitch(nn.Module):
         g = self.gumbel.sample(sample_size).to(self.probs.device)
 
         # Compute the weights of the convex sum.
-        weights = torch.softmax((g + torch.log(self.probs)) / self.temperature[0], dim=-1)
+        weights = torch.softmax((g + self.switch_logits) / self.temperature[0], dim=-1)
 
         if not self.training:
             self.recent_weights = weights.detach().cpu().numpy()
