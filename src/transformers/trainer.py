@@ -1364,8 +1364,11 @@ class Trainer:
 
                     # Apply adapter switch regularization.
                     if self.train_adapter_switch:
-                        switch_reg_loss = self.model.base_model.get_switch_regularization_loss()
-                        switch_reg_loss.backward()
+                        switch_reg_loss = self.model.base_model \
+                                                    .get_switch_regularization_loss()
+
+                        if switch_reg_loss.requires_grad:
+                            switch_reg_loss.backward()
 
                     # Gradient clipping
                     if args.max_grad_norm is not None and args.max_grad_norm > 0 and not self.deepspeed:
