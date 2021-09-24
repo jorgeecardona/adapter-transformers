@@ -580,7 +580,7 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
 
         for name, param in self.encoder.named_parameters():
             if switch_re.match(name):
-                reg_loss += 0.01 * torch.mean(torch.softmax(param, dim=-1).pow(0.01))
+                reg_loss += 0.01 * torch.mean(torch.softmax(param, dim=-1).pow(0.5))
 
         return reg_loss
 
