@@ -418,6 +418,10 @@ class AdapterSwitch(nn.Module):
 
         batch_size, seq_length, num_classes, hidden_dim_size = x.size()
 
+        if not self.training:
+            idx = torch.argmax(self.switch_logits, dim=-1)
+            return x[:, :, idx, :]
+
         if self.config.strategy == 'global':
             sample_size = [batch_size, num_classes]
         elif self.config.strategy == 'seq_length':

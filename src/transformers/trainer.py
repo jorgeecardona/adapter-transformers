@@ -55,7 +55,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
 from . import __version__
-from .adapters.composition import AdapterCompositionBlock, Fuse
+from .adapters.composition import AdapterCompositionBlock, Fuse, Switch
 from .configuration_utils import PretrainedConfig
 from .data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from .debug_utils import DebugOption, DebugUnderflowOverflow
@@ -275,6 +275,7 @@ class Trainer:
         do_save_full_model: Optional[bool] = None,
         do_save_adapters: Optional[bool] = None,
         do_save_adapter_fusion: Optional[bool] = None,
+        do_save_adapter_switch: Optional[bool] = None,
         adapter_names: Optional[List[List[str]]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
     ):
@@ -407,29 +408,52 @@ class Trainer:
             model_freezed = getattr(self.model.base_model, "model_freezed", False)
         else:
             model_freezed = False
+
+        # Default values.
+        self.train_adapter_fusion = False
+        self.train_adapter_switch = False
+
         if model_freezed and self.model.active_adapters:
             # Check if training AdapterFusion
-            self.train_adapter_fusion = (
-                isinstance(self.model.active_adapters, Fuse)
-                or isinstance(self.model.active_adapters, AdapterCompositionBlock)
-                and any([isinstance(child, Fuse) for child in self.model.active_adapters.children])
-            )
+            if isinstance(self.model.active_adapters, Fuse):
+                self.train_adapter_fusion = True
+
+            if isinstance(self.model.active_adapters, AdapterCompositionBlock):
+                for child in self.model.active_adapters.children:
+                    if isinstance(child, Fuse):
+                        self.train_adapter_fusion = True
+
+            # Chek if training AdapterSwitch.
+            if isinstance(self.model.active_adapters, Switch):
+                self.train_adapter_switch = True
+
+            if isinstance(self.model.active_adapters, AdapterCompositionBlock):
+                for child in self.model.active_adapters.children:
+                    if isinstance(child, Switch):
+                        self.train_adapter_switch = True
+
             # Configure model saving
             self.do_save_full_model = False
             self.do_save_adapters = True
             self.do_save_adapter_fusion = self.train_adapter_fusion
+            self.do_save_adapter_switch = self.train_adapter_switch
         else:
-            self.train_adapter_fusion = False
             self.do_save_full_model = True
             self.do_save_adapters = False
             self.do_save_adapter_fusion = False
+            self.do_save_adapter_switch = False
+
         # override with explicit setting
         if do_save_full_model is not None:
             self.do_save_full_model = do_save_full_model
         if do_save_adapters is not None:
             self.do_save_adapters = do_save_adapters
+
         if do_save_adapter_fusion is not None:
             self.do_save_adapter_fusion = do_save_adapter_fusion
+
+        if do_save_adapter_switch is not None:
+            self.do_save_adapter_switch = do_save_adapter_switch
 
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
             raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
@@ -1337,6 +1361,11 @@ class Trainer:
                     if self.train_adapter_fusion:
                         fusion_reg_loss = self.model.base_model.get_fusion_regularization_loss()
                         fusion_reg_loss.backward()
+
+                    # Apply adapter switch regularization.
+                    if self.train_adapter_switch:
+                        switch_reg_loss = self.model.base_model.get_switch_regularization_loss()
+                        switch_reg_loss.backward()
 
                     # Gradient clipping
                     if args.max_grad_norm is not None and args.max_grad_norm > 0 and not self.deepspeed:

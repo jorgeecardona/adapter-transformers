@@ -1,9 +1,11 @@
 import logging
+import re
 import warnings
 from abc import ABC, abstractmethod
 from os.path import join
 from typing import List, Optional, Union
 
+import torch
 from torch import nn
 
 from .composition import (
@@ -569,6 +571,19 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
             logger.warning("There are adapters available but none are activated for the forward pass.")
 
         self.config.adapters.is_parallelized = False
+
+    def get_switch_regularization_loss(self):
+
+        reg_loss = torch.tensor(0.0).to(self.device)
+
+        switch_re = re.compile('^.*\.adapter_switch_layer\..*\.switch_logits$')
+
+        for name, param in self.encoder.named_parameters():
+            if switch_re.match(name):
+                reg_loss += 0.01 * torch.mean(torch.softmax(param, dim=-1).pow(0.01))
+
+        return reg_loss
+
 
 
 @inherit_doc
