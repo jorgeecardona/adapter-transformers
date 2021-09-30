@@ -391,7 +391,12 @@ class AdapterSwitch(nn.Module):
 
     config: AdapterSwitchConfig
 
+    mode: str
+
     recent_weights = None
+
+    def set_mode(self, mode: str):
+        self.mode = mode
 
     def __init__(self, config: AdapterSwitchConfig, num: int):
         super().__init__()
@@ -410,6 +415,9 @@ class AdapterSwitch(nn.Module):
         # Distribution used.
         self.gumbel = torch.distributions.Gumbel(0, 1)
 
+        # Assume first hard mode.
+        self.set_mode('hard')
+
     @property
     def probs(self):
         return torch.softmax(self.switch_logits, dim=-1)
@@ -418,7 +426,7 @@ class AdapterSwitch(nn.Module):
 
         batch_size, seq_length, num_classes, hidden_dim_size = x.size()
 
-        if not self.training:
+        if not self.training and self.mode == 'hard':
             idx = torch.argmax(self.switch_logits, dim=-1)
             return x[:, :, idx, :]
 
