@@ -140,7 +140,7 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         for fusion_name in self.config.adapters.fusions:
             self._add_fusion_layer(fusion_name)
 
-        # Initialize fusion from config
+        # Initialize switch from config
         for name in self.config.adapters.switches:
             self._add_switch_layer(name)
 
@@ -617,9 +617,24 @@ class ModelWithHeadsAdaptersMixin(ModelAdaptersMixin):
     def train_adapter_fusion(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
         """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
         self.base_model.train_adapter_fusion(adapter_setup, unfreeze_adapters=unfreeze_adapters)
-    def train_adapter_switch(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
-        """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
-        self.base_model.train_adapter_switch(adapter_setup, unfreeze_adapters=unfreeze_adapters)
+
+    def train_adapter_switch(
+            self,
+            adapter_setup: Union[list, AdapterCompositionBlock],
+            unfreeze_adapters=False,
+            freeze_model: bool = True
+    ):
+        """
+        Sets the model into mode for training of adapter fusion determined
+        by a list of adapter names.
+        """
+
+        self.base_model.train_adapter_switch(
+            adapter_setup,
+            unfreeze_adapters=unfreeze_adapters,
+            freeze_model=freeze_model
+        )
+
     def _add_adapter(self, adapter_name):
         self.base_model._add_adapter(adapter_name)
 

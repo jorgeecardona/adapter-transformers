@@ -581,7 +581,7 @@ ADAPTERFUSION_CONFIG_MAP = {
 DEFAULT_ADAPTERFUSION_CONFIG = "dynamic"
 
 ADAPTERSWITCH_CONFIG_MAP = {
-    'default': AdapterSwitchConfig()
+    'default': AdapterSwitchConfig(),
 }
 
 DEFAULT_ADAPTERSWITCH_CONFIG = "default"

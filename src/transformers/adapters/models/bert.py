@@ -66,22 +66,35 @@ class BertLayerAdaptersMixin:
         self.output.delete_switch_layer(adapter_names)
 
     def enable_adapters(
-        self, adapter_setup: AdapterCompositionBlock, unfreeze_adapters: bool, unfreeze_attention: bool, unfreeze_switches: bool
+            self,
+            adapter_setup: AdapterCompositionBlock,
+            unfreeze_adapters: bool,
+            unfreeze_attention: bool,
+            unfreeze_switches: bool
     ):
-        self.attention.output.enable_adapters(adapter_setup, unfreeze_adapters, unfreeze_attention, unfreeze_switches)
-        self.output.enable_adapters(adapter_setup, unfreeze_adapters, unfreeze_attention, unfreeze_switches)
+        self.attention.output.enable_adapters(
+            adapter_setup,
+            unfreeze_adapters,
+            unfreeze_attention,
+            unfreeze_switches
+        )
+
+        self.output.enable_adapters(
+            adapter_setup,
+            unfreeze_adapters,
+            unfreeze_attention,
+            unfreeze_switches
+        )
 
 
 class BertEncoderAdaptersMixin:
     """Adds adapters to the BertEncoder module."""
 
     def add_switch_layer(self, adapter_names):
-        logger.info(f"Add switch {adapter_names}")
+        logger.info(f"BERT: add switch {adapter_names}.")
 
         adapter_config = self.config.adapters.get(adapter_names[-1])
         leave_out = adapter_config.get("leave_out", [])
-
-        logger.info(leave_out)
 
         for i, layer in enumerate(self.layer):
             if i not in leave_out:
@@ -92,6 +105,7 @@ class BertEncoderAdaptersMixin:
             layer.add_fusion_layer(adapter_names)
 
     def add_adapter(self, adapter_name: str):
+        logger.info(f"BERT: add adapter {adapter_name}.")
         adapter_config = self.config.adapters.get(adapter_name)
         leave_out = adapter_config.get("leave_out", [])
         for i, layer in enumerate(self.layer):
@@ -150,16 +164,28 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
         self.set_active_adapters(adapter_setup)
         # TODO implement fusion for invertible adapters
 
-    def train_adapter_switch(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
-        """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
+    def train_adapter_switch(
+            self,
+            adapter_setup: Union[list, AdapterCompositionBlock],
+            unfreeze_adapters: bool = False,
+            freeze_model: bool = True,
+    ):
+        """
+        Sets the model into mode for training of adapter fusion determined
+        by a list of adapter names.
+        """
+
         self.train()
-        self.freeze_model(True)
+
+        if freeze_model:
+            self.freeze_model(True)
+
         adapter_setup = parse_composition(adapter_setup)
+
         self.encoder.enable_adapters(adapter_setup, unfreeze_adapters, False, True)
         # use the adapters to be trained by default in every forward pass
 
         self.set_active_adapters(adapter_setup)
-        # TODO implement fusion for invertible adapters
 
     def _add_adapter(self, adapter_name):
         self.encoder.add_adapter(adapter_name)

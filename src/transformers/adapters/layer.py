@@ -128,7 +128,13 @@ class AdapterLayerBaseMixin(ABC):
             logger.info(f"Unfreezing {name}.")
             param.requires_grad = True
 
-    def enable_adapters(self, adapter_setup: AdapterCompositionBlock, unfreeze_adapters: bool, unfreeze_fusion: bool, unfreeze_switches: bool):
+    def enable_adapters(
+            self,
+            adapter_setup: AdapterCompositionBlock,
+            unfreeze_adapters: bool,
+            unfreeze_fusion: bool,
+            unfreeze_switches: bool
+    ):
         """
         Unfreezes a given list of adapters, the adapter fusion layer, or both
 
@@ -137,6 +143,7 @@ class AdapterLayerBaseMixin(ABC):
             unfreeze_adapters: whether the adapters themselves should be unfreezed
             unfreeze_fusion: whether the adapter attention layer for the given adapters should be unfreezed
         """
+
         if unfreeze_adapters:
             for adapter_name in adapter_setup.flatten():
                 if adapter_name in self.adapters:
@@ -156,6 +163,7 @@ class AdapterLayerBaseMixin(ABC):
                         )
 
         if unfreeze_switches:
+
             if isinstance(adapter_setup, Switch):
                 if adapter_setup.name in self.adapter_switch_layer:
                     self._unfreeze_module(
