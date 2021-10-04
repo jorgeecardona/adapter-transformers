@@ -1,3 +1,4 @@
+from typing import List
 import math
 
 import torch
@@ -398,13 +399,15 @@ class AdapterSwitch(nn.Module):
     def set_mode(self, mode: str):
         self.mode = mode
 
-    def __init__(self, config: AdapterSwitchConfig, num: int):
+    def __init__(self, config: AdapterSwitchConfig, initial_logits: List[float] = []):
         super().__init__()
 
         self.config = config
 
         # Keep the logits of probabilities as a separate parameters.
-        self.register_parameter('switch_logits', nn.Parameter(torch.zeros(num)))
+        self.register_parameter(
+            'switch_logits', nn.Parameter(torch.tensor(initial_logits))
+        )
 
         # Initial value of temperature depends on config.
         T = 1.0

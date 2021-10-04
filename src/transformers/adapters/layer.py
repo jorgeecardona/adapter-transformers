@@ -4,6 +4,7 @@ from typing import List, Mapping, Union
 import torch
 from torch import nn
 
+from .configuration import AdapterSwitchConfig
 from .composition import (
     AdapterCompositionBlock,
     BatchSplit,
@@ -86,7 +87,7 @@ class AdapterLayerBaseMixin(ABC):
         if adapter_name in self.adapters:
             del self.adapters[adapter_name]
 
-    def add_switch_layer(self, adapter_names: Union[List, str], layer_idx: int):
+    def add_switch(self, adapter_names: Union[List, str], layer_idx: int):
         logger.info(f"Add switch {adapter_names} at layer {layer_idx}.")
 
         self.layer_idx = layer_idx
@@ -95,8 +96,18 @@ class AdapterLayerBaseMixin(ABC):
             adapter_names = adapter_names.split(',')
 
         # Get config and create switch.
+        config: AdapterSwitchConfig
         config = self.config.adapters.get_switch(adapter_names)
-        adapter = AdapterSwitch(config, len(adapter_names))
+
+        # Define initial logits
+        initial_logits = [0.0] * len(adapter_names)
+
+        # If this layer is fixed.
+        if layer_idx in config.fixed:
+            initial_logits[config.fixed[layer_idx]] = 1.0
+
+        # Create the switch with pre-defined logits.
+        adapter = AdapterSwitch(config, initial_logits)
         adapter.train(self.training)
         self.adapter_switch_layer[','.join(adapter_names)] = adapter
 
@@ -128,12 +139,35 @@ class AdapterLayerBaseMixin(ABC):
             logger.info(f"Unfreezing {name}.")
             param.requires_grad = True
 
+    def enable_switch(self, adapter_setup: AdapterCompositionBlock):
+        # Enable a particular switch.
+        logger.info(f"Unfreezing switch {adapter_setup} at layer {self.layer_idx}")
+
+        # Get switch configurations.
+        config: AdapterSwitchConfig
+        config = self.config.adapters.get_switch(adapter_setup.name)
+
+        if self.layer_idx not in config.fixed:
+            if adapter_setup.name in self.adapter_switch_layer:
+                self._unfreeze_module(
+                    self.adapter_switch_layer[adapter_setup.name]
+                )
+
+        unfreeze_inputs = []
+        if self.layer_idx not in config.fixed:
+            unfreeze_inputs = list(range(len(adapter_setup.names)))
+        else:
+            unfreeze_inputs.append(config.fixed[self.layer_idx])
+
+        for i, name in enumerate(adapter_setup.names):
+            if name in self.adapters and i in unfreeze_inputs:
+                self._unfreeze_module(self.adapters[name])
+
     def enable_adapters(
             self,
             adapter_setup: AdapterCompositionBlock,
             unfreeze_adapters: bool,
-            unfreeze_fusion: bool,
-            unfreeze_switches: bool
+            unfreeze_fusion: bool
     ):
         """
         Unfreezes a given list of adapters, the adapter fusion layer, or both
@@ -160,20 +194,6 @@ class AdapterLayerBaseMixin(ABC):
                     if sub_setup.name in self.adapter_fusion_layer:
                         self._unfreeze_module(
                             self.adapter_fusion_layer[sub_setup.name]
-                        )
-
-        if unfreeze_switches:
-
-            if isinstance(adapter_setup, Switch):
-                if adapter_setup.name in self.adapter_switch_layer:
-                    self._unfreeze_module(
-                        self.adapter_switch_layer[adapter_setup.name]
-                    )
-            for sub_setup in adapter_setup:
-                if isinstance(sub_setup, Switch):
-                    if sub_setup.name in self.adapter_switch_layer:
-                        self._unfreeze_module(
-                            self.adapter_switch_layer[sub_setup.name]
                         )
 
     def get_adapter_preparams(
@@ -526,6 +546,7 @@ class AdapterLayerBaseMixin(ABC):
         """
         Called for each forward pass through adapters.
         """
+
         if hasattr(self.config, "adapters"):
             # First check for given arguments before falling back to defined setup
             adapter_setup = kwargs.pop("adapter_names", None)
@@ -535,9 +556,16 @@ class AdapterLayerBaseMixin(ABC):
                 adapter_setup = self.config.adapters.active_setup
         else:
             adapter_setup = None
-        skip_adapters = adapter_setup is None or (
-            self.config.adapters.skip_layers is not None and self.layer_idx in self.config.adapters.skip_layers
-        )
+
+        skip_adapters = False
+
+        if adapter_setup is None:
+            skip_adapters = True
+        elif self.config.adapters.skip_layers is None:
+            skip_adapters = False
+        elif self.layer_idx in self.config.adapters.skip_layers:
+            skip_adapters = True
+
         if not skip_adapters and (len(set(self.adapters.keys()) & adapter_setup.flatten()) > 0):
             if isinstance(adapter_setup, Stack):
                 hidden_states, _, input_tensor = self.adapter_stack(

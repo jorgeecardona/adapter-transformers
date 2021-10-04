@@ -2,7 +2,7 @@ import copy
 import logging
 from collections.abc import Collection, Mapping
 from dataclasses import FrozenInstanceError, asdict, dataclass, field, is_dataclass, replace
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 
 from .composition import AdapterCompositionBlock
 from .utils import get_adapter_config_hash, resolve_adapter_config
@@ -145,6 +145,9 @@ class AdapterSwitchConfig(BaseAdapterConfig):
 
     # Switch strategy.
     strategy: str = 'default'
+
+    # Fix some switch positions.
+    fixed: Dict[int, int] = field(default_factory=dict)
 
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):
@@ -373,7 +376,7 @@ class ModelAdaptersConfig(Collection):
             config = None
         return config
 
-    def get_switch(self, name: Union[str, List[str]]) -> Optional[dict]:
+    def get_switch(self, name: Union[str, List[str]]) -> AdapterSwitchConfig:
         """
         Gets the config dictionary for a given AdapterSwitch.
         """
@@ -381,21 +384,19 @@ class ModelAdaptersConfig(Collection):
         if isinstance(name, list):
             name = ",".join(name)
 
+        config = None
+
         if name in self.switches:
             config_name = self.switches[name]
             if config_name in self.switch_config_map:
                 config = self.switch_config_map.get(config_name, None)
             else:
                 config = ADAPTERSWITCH_CONFIG_MAP.get(config_name, None)
-        else:
-            config = None
 
         return config
 
     def add_switch(self, name: Union[str, List[str]], config: Union[dict]):
-        """
-        Adds a new AdapterSwitch.
-        """
+        # Adds a new AdapterSwitch.
 
         if isinstance(name, list):
             name = ','.join(name)
@@ -424,7 +425,7 @@ class ModelAdaptersConfig(Collection):
             raise ValueError("Invalid AdapterSwitch config: {}".format(config))
 
         self.switches[name] = config_name
-        logger.info(f"Adding AdapterSwitch '{name}'.")
+        logger.info(f"Adding switch '{name}' with config '{config_name}'.")
 
     def add_fusion(self, fusion_name: Union[str, List[str]], config: Optional[Union[str, dict]] = None):
         """

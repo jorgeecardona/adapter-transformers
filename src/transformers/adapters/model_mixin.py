@@ -110,6 +110,7 @@ class ModelConfigAdaptersMixin(ABC):
         # Convert AdapterFusions from old format for backwards compatibility
         fusion_models = kwargs.pop("adapter_fusion_models", [])
         fusion_config = kwargs.pop("adapter_fusion", None)
+
         for fusion_adapter_names in fusion_models:
             self.adapters.add_fusion(fusion_adapter_names, config=fusion_config)
 
@@ -165,8 +166,9 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         pass
 
     @abstractmethod
-    def train_adapter_switch(self, adapter_setup: Union[list, AdapterCompositionBlock], unfreeze_adapters=False):
-        """Sets the model into mode for training of adapter switch determined by a list of adapter names."""
+    def train_adapter_switch(self, adapter_setup: AdapterCompositionBlock):
+        # ts the model into mode for training of adapter switch determined
+        # by a list of adapter names.
         pass
 
     @abstractmethod
@@ -201,16 +203,22 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         self.set_active_adapters(adapter_setup)
 
     def set_active_adapters(
-        self, adapter_setup: Union[list, AdapterCompositionBlock], skip_layers: Optional[List[int]] = None
+            self,
+            adapter_setup: Union[list, AdapterCompositionBlock],
+            skip_layers: Optional[List[int]] = None
     ):
         """
-        Sets the adapter modules to be used by default in every forward pass. If no adapter with the given name is
-        found, no module of the respective type will be activated.
+        Sets the adapter modules to be used by default in every forward pass.
+        If no adapter with the given name is found, no module of the respective
+        type will be activated.
 
         Args:
             adapter_setup (list): The list of adapters to be activated by default. Can be a fusion or stacking configuration.
         """
-        adapter_setup = parse_composition(adapter_setup, model_type=self.config.model_type)
+        adapter_setup = parse_composition(
+            adapter_setup, model_type=self.config.model_type
+        )
+
         if adapter_setup:
             for adapter_name in adapter_setup.flatten():
                 if adapter_name not in self.config.adapters.adapters:
@@ -266,6 +274,7 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
             self.delete_adapter_switch(adapter.names)
 
         self.config.adapters.add_switch(adapter.names, config=config)
+
         self.base_model._add_switch_layer(adapter.names)
 
         if set_active:
@@ -567,6 +576,7 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         """
         # some warnings if we don't use available adapters
         active_adapters = self.active_adapters or kwargs.get("adapter_names", None)
+
         if not active_adapters and self.has_adapters():
             logger.warning("There are adapters available but none are activated for the forward pass.")
 
@@ -618,22 +628,12 @@ class ModelWithHeadsAdaptersMixin(ModelAdaptersMixin):
         """Sets the model into mode for training of adapter fusion determined by a list of adapter names."""
         self.base_model.train_adapter_fusion(adapter_setup, unfreeze_adapters=unfreeze_adapters)
 
-    def train_adapter_switch(
-            self,
-            adapter_setup: Union[list, AdapterCompositionBlock],
-            unfreeze_adapters=False,
-            freeze_model: bool = True
-    ):
+    def train_adapter_switch(self, adapter_setup: AdapterCompositionBlock):
         """
         Sets the model into mode for training of adapter fusion determined
         by a list of adapter names.
         """
-
-        self.base_model.train_adapter_switch(
-            adapter_setup,
-            unfreeze_adapters=unfreeze_adapters,
-            freeze_model=freeze_model
-        )
+        self.base_model.train_adapter_switch(adapter_setup)
 
     def _add_adapter(self, adapter_name):
         self.base_model._add_adapter(adapter_name)
