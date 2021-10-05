@@ -107,7 +107,7 @@ class AdapterLayerBaseMixin(ABC):
             initial_logits[config.fixed[layer_idx]] = 1.0
 
         # Create the switch with pre-defined logits.
-        adapter = AdapterSwitch(config, initial_logits)
+        adapter = AdapterSwitch(config, layer_idx, initial_logits)
         adapter.train(self.training)
         self.adapter_switch_layer[','.join(adapter_names)] = adapter
 
