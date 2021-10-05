@@ -404,15 +404,11 @@ class AdapterSwitch(nn.Module):
     def __init__(
             self,
             config: AdapterSwitchConfig,
-            layer_idx: int,
             initial_logits: List[float] = []
     ):
         super().__init__()
 
         self.config = config
-
-        # Is this switch fixed?
-        self.fixed = self.config.fixed.get(layer_idx, None)
 
         # Keep the logits of probabilities as a separate parameters.
         self.register_parameter(
@@ -438,9 +434,6 @@ class AdapterSwitch(nn.Module):
     def forward(self, x):
 
         batch_size, seq_length, num_classes, hidden_dim_size = x.size()
-
-        if self.fixed is not None:
-            return x[:, :, self.fixed, :]
 
         if not self.training and self.mode == 'hard':
             idx = torch.argmax(self.switch_logits, dim=-1)
