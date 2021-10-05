@@ -102,12 +102,8 @@ class AdapterLayerBaseMixin(ABC):
         # Define initial logits
         initial_logits = [0.0] * len(adapter_names)
 
-        # If this layer is fixed.
-        if layer_idx in config.fixed:
-            initial_logits[config.fixed[layer_idx]] = 1.0
-
         # Create the switch with pre-defined logits.
-        adapter = AdapterSwitch(config, layer_idx, initial_logits)
+        adapter = AdapterSwitch(config, layer_idx, initial_logits=initial_logits)
         adapter.train(self.training)
         self.adapter_switch_layer[','.join(adapter_names)] = adapter
 
