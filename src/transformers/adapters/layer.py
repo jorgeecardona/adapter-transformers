@@ -283,10 +283,6 @@ class AdapterLayerBaseMixin(ABC):
         switch_config: AdapterSwitchConfig
         switch_config = self.config.adapters.get_switch(adapter_setup.name)
 
-        hidden_states, query, residual = self.get_adapter_preparams(
-            adapter_config, hidden_states, input_tensor
-        )
-
         outputs = []
 
         for i, switch_input in enumerate(adapter_setup):
