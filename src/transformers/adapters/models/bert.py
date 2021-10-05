@@ -158,7 +158,7 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
         self.train()
         self.freeze_model(True)
         adapter_setup = parse_composition(adapter_setup)
-        self.encoder.enable_adapters(adapter_setup, True, False, False)
+        self.encoder.enable_adapters(adapter_setup, True, False)
         self.enable_invertible_adapters(adapter_setup.flatten())
         # use the adapters to be trained by default in every forward pass
         self.set_active_adapters(adapter_setup)
@@ -173,7 +173,7 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
         self.train()
         self.freeze_model(True)
         adapter_setup = parse_composition(adapter_setup)
-        self.encoder.enable_adapters(adapter_setup, unfreeze_adapters, True, False)
+        self.encoder.enable_adapters(adapter_setup, unfreeze_adapters, True)
         # use the adapters to be trained by default in every forward pass
         self.set_active_adapters(adapter_setup)
         # TODO implement fusion for invertible adapters
