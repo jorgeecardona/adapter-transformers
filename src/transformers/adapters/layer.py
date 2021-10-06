@@ -218,7 +218,6 @@ class AdapterLayerBaseMixin(ABC):
         if adapter_config["original_ln_before"]:
             if self.transformer_layer_norm:
                 hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)
-                hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)
             else:
                 hidden_states = hidden_states + input_tensor
 
