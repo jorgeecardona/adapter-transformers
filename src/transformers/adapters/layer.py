@@ -193,14 +193,11 @@ class AdapterLayerBaseMixin(ABC):
                         )
 
     def get_adapter_preparams(
-        self,
-        adapter_config,
-        hidden_states,
-        input_tensor,
-        fusion_config=None,
+            self, adapter_config, hidden_states, input_tensor, fusion_config=None
     ):
         """
-        Retrieves the hidden_states, query (for Fusion), and residual connection according to the set configuratio
+        Retrieves the hidden_states, query (for Fusion), and residual connection
+        according to the set configuration.
 
         Args:
             adapter_config: config file according to what the parameters are passed
@@ -220,6 +217,7 @@ class AdapterLayerBaseMixin(ABC):
 
         if adapter_config["original_ln_before"]:
             if self.transformer_layer_norm:
+                hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)
                 hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)
             else:
                 hidden_states = hidden_states + input_tensor
@@ -247,10 +245,13 @@ class AdapterLayerBaseMixin(ABC):
 
             # Case 1: We have a nested fusion layer -> call fusion method
             if isinstance(adapter_stack_layer, Fuse):
-                hidden_states = self.adapter_fusion(adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1)
+                hidden_states = self.adapter_fusion(
+                    adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1
+                )
             # Case 2: We have a nested split layer -> call split method
             elif isinstance(adapter_stack_layer, Split):
-                hidden_states = self.adapter_split(adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1)
+                hidden_states = self.adapter_split(
+                    adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1)
             # Case 3: We have a nested parallel layer -> call parallel method
             elif isinstance(adapter_stack_layer, Parallel):
                 hidden_states, input_tensor = self.adapter_parallel(
@@ -258,21 +259,38 @@ class AdapterLayerBaseMixin(ABC):
                 )
             # Case 4: We have a nested batch split block -> call batchsplit method
             elif isinstance(adapter_stack_layer, BatchSplit):
-                hidden_states = self.adapter_batchsplit(adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1)
-            # Case 5: We have a single adapter which is part of this module -> forward pass
+                hidden_states = self.adapter_batchsplit(
+                    adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1
+                )
+
+            # Case 5: We have a switch as an element in the stack.
+            elif isinstance(adapter_stack_layer, Switch):
+                hidden_states = self.adapter_switch(
+                    adapter_stack_layer, hidden_states, input_tensor, lvl=lvl + 1
+                )
+
+            # Case 6: We have a single adapter which is part of this module -> forward pass
             elif adapter_stack_layer in self.adapters:
                 adapter_layer = self.adapters[adapter_stack_layer]
                 adapter_config = self.config.adapters.get(adapter_stack_layer)
-                hidden_states, _, residual = self.get_adapter_preparams(adapter_config, hidden_states, input_tensor)
-                hidden_states, _, up = adapter_layer(hidden_states, residual_input=residual)
-                # as this stack might be part of a fusion block, return the adapter up-projection output here
-                # together with the final output (with potential residuals & norms) if we reached the last block of the stack
+                hidden_states, _, residual = self.get_adapter_preparams(
+                    adapter_config, hidden_states, input_tensor
+                )
+                hidden_states, _, up = adapter_layer(
+                    hidden_states, residual_input=residual
+                )
+                # as this stack might be part of a fusion block, return the
+                # adapter up-projection output here together with the final
+                # output (with potential residuals & norms) if we reached the
+                # last block of the stack.
                 if i == len(adapter_setup) - 1:
                     return hidden_states, up, input_tensor
+
             # Case X: No adapter which is part of this module -> ignore
 
         # If we got here, we either had another nested composition block
-        # or no adapter was found. In both cases, we don't need to set the second return value for fusion
+        # or no adapter was found. In both cases, we don't need to set the
+        # second return value for fusion
         return hidden_states, None, input_tensor
 
     def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
@@ -293,10 +311,8 @@ class AdapterLayerBaseMixin(ABC):
                 outputs.append(hidden_states_)
 
             elif switch_input in self.adapters:
-
                 adapter_layer = self.adapters[switch_input]
                 adapter_config = self.config.adapters.get(switch_input)
-
                 hidden_states_, _, residual = self.get_adapter_preparams(
                     adapter_config, hidden_states, input_tensor
                 )
