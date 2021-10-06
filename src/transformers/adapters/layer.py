@@ -234,6 +234,7 @@ class AdapterLayerBaseMixin(ABC):
         Forwards the given input through the given stack of adapters.
         """
         for i, adapter_stack_layer in enumerate(adapter_setup):
+
             # Break if setup is too deep
             if isinstance(adapter_stack_layer, AdapterCompositionBlock) and lvl >= 1:
                 raise ValueError(
@@ -292,6 +293,22 @@ class AdapterLayerBaseMixin(ABC):
         # second return value for fusion
         return hidden_states, None, input_tensor
 
+    def _adapter_forward(self, adapter_setup, hidden_states, input_tensor, lvl=0):
+        if isinstance(adapter_setup, Stack):
+            hidden_states, _, _ = self.adapter_stack(
+                adapter_setup, hidden_states, input_tensor, lvl=lvl + 1
+            )
+
+        elif adapter_setup in self.adapters:
+            adapter_layer = self.adapters[adapter_setup]
+            adapter_config = self.config.adapters.get(adapter_setup)
+            hidden_states, _, residual = self.get_adapter_preparams(
+                adapter_config, hidden_states, input_tensor
+            )
+            hidden_states, _, _ = adapter_layer(hidden_states, residual_input=residual)
+
+        return hidden_states
+
     def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
 
         # Get the configuration of the switch.
@@ -304,30 +321,22 @@ class AdapterLayerBaseMixin(ABC):
                 adapter_config, hidden_states, input_tensor
             )
 
+        if self.layer_idx in switch_config.fixed:
+            return self._adapter_forward(
+                adapter_setup[switch_config.fixed[self.layer_idx]],
+                hidden_states, input_tensor,
+                lvl
+            )
+
         outputs = []
 
         for i, switch_input in enumerate(adapter_setup):
-            if isinstance(switch_input, Stack):
-                hidden_states_, _, _ = self.adapter_stack(
-                    switch_input, hidden_states, input_tensor, lvl=lvl + 1
-                )
-                outputs.append(hidden_states_)
-
-            elif switch_input in self.adapters:
-                adapter_layer = self.adapters[switch_input]
-                adapter_config = self.config.adapters.get(switch_input)
-                hidden_states_, _, residual = self.get_adapter_preparams(
-                    adapter_config, hidden_states, input_tensor
-                )
-                hidden_states_, _, _ = adapter_layer(
-                    hidden_states_, residual_input=residual
-                )
-                outputs.append(hidden_states_)
+            outputs.append(self._adapter_forward(
+                switch_input, hidden_states, input_tensor, lvl
+            ))
 
         if len(outputs) == 1:
             hidden_states = outputs[0]
-        elif self.layer_idx in switch_config.fixed:
-            hidden_states = outputs[switch_config.fixed[self.layer_idx]]
         elif len(outputs) > 1:
             hidden_states = self.adapter_switch_layer[adapter_setup.name](
                 torch.stack(outputs).permute(1, 2, 0, 3)
