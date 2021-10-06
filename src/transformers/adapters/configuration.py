@@ -149,6 +149,9 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     # Fix some switch positions.
     fixed: Dict[int, int] = field(default_factory=dict)
 
+    # Activate the bug?
+    bug: bool = False
+
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):
 

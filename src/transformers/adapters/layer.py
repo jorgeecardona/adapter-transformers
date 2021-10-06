@@ -293,16 +293,16 @@ class AdapterLayerBaseMixin(ABC):
         return hidden_states, None, input_tensor
 
     def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
-        # config of _last_ fused adapter is significant
-        adapter_config = self.config.adapters.get(adapter_setup.last())
 
         # Get the configuration of the switch.
         switch_config: AdapterSwitchConfig
         switch_config = self.config.adapters.get_switch(adapter_setup.name)
 
-        hidden_states, query, residual = self.get_adapter_preparams(
-            adapter_config, hidden_states, input_tensor
-        )
+        if switch_config.bug:
+            adapter_config = self.config.adapters.get(adapter_setup.last())
+            hidden_states, query, residual = self.get_adapter_preparams(
+                adapter_config, hidden_states, input_tensor
+            )
 
         outputs = []
 
