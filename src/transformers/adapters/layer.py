@@ -104,7 +104,8 @@ class AdapterLayerBaseMixin(ABC):
         initial_logits = [0.0] * len(adapter_names)
 
         if layer_idx in config.fixed_soft:
-            initial_logits[config.fixed_soft[layer_idx]] = math.log(0.9 / (1 - 0.9))
+            logit = math.log(config.soft_fixed_prob / (1 - config.soft_fixed_prob))
+            initial_logits[config.fixed_soft[layer_idx]] = logit
 
         # Create the switch with pre-defined logits.
         adapter = AdapterSwitch(config, initial_logits=initial_logits)

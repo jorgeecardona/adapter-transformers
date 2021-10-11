@@ -152,6 +152,9 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     # Fix some switch positions.
     fixed_soft: Dict[int, int] = field(default_factory=dict)
 
+    # Probability for fixed probabilities.
+    soft_fixed_prob: float = 0.9
+
     # Activate the bug?
     bug: bool = False
 
