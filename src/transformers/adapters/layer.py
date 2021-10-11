@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Mapping, Union
 
+import math
 import torch
 from torch import nn
 
@@ -101,6 +102,9 @@ class AdapterLayerBaseMixin(ABC):
 
         # Define initial logits
         initial_logits = [0.0] * len(adapter_names)
+
+        if layer_idx in config.fixed_soft:
+            initial_logits[config.fixed_soft[layer_idx]] = math.log(0.9 / (1 - 0.9))
 
         # Create the switch with pre-defined logits.
         adapter = AdapterSwitch(config, initial_logits=initial_logits)

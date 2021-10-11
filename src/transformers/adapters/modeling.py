@@ -110,7 +110,8 @@ class Adapter(nn.Module):
 
         seq_list.append(self.non_linearity)
 
-        # sequential adapter, first downproject, then non-linearity then upsample. In the forward pass we include the
+        # sequential adapter, first downproject, then non-linearity then upsample.
+        # In the forward pass we include the
         # residual connection
         self.adapter_down = nn.Sequential(*seq_list)
 
@@ -118,14 +119,17 @@ class Adapter(nn.Module):
         if not self.skip_linear_layers:
             self.adapter_up = nn.Linear(self.down_sample, self.input_size)
 
-            # If we want to have a layer norm on output, we apply it later after a separate residual connection
-            # This means that we learn a new output layer norm, which replaces another layer norm learned in the bert layer
+            # If we want to have a layer norm on output, we apply it later
+            # after a separate residual connection
+            # This means that we learn a new output layer norm, which replaces
+            # another layer norm learned in the bert layer
             if self.add_layer_norm_after:
                 self.adapter_norm_after = nn.LayerNorm(self.input_size)
         else:
             self.adapter_up = nn.Identity()
 
-        # if we want to initialize with the bert strategy then this function is called for all the linear layers
+        # if we want to initialize with the bert strategy then this
+        # function is called for all the linear layers
         if init_bert_weights:
             self.adapter_down.apply(self.init_bert_weights)
             self.adapter_up.apply(self.init_bert_weights)
