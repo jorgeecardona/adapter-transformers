@@ -155,8 +155,12 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     # Probability for fixed probabilities.
     soft_fixed_prob: float = 0.9
 
-    # Activate the bug?
+    # Activate the bug? REMOVE THIS!
     bug: bool = False
+
+    # Regularization weight and power
+    prob_regularization_weight: float = 0.0
+    prob_regularization_power: float = 0.5
 
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):

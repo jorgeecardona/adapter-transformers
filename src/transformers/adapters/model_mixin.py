@@ -583,18 +583,7 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
         self.config.adapters.is_parallelized = False
 
     def get_switch_regularization_loss(self):
-
-        reg_loss = torch.tensor(0.0).to(self.device)
-
-        switch_re = re.compile('^.*\.adapter_switch_layer\..*\.switch_logits$')
-
-        for name, param in self.encoder.named_parameters():
-            if switch_re.match(name):
-                reg_loss += 0.01 * torch.mean(torch.softmax(param, dim=-1).pow(0.5))
-
-        return reg_loss
-
-
+        return 0.0
 
 @inherit_doc
 class ModelWithHeadsAdaptersMixin(ModelAdaptersMixin):

@@ -42,6 +42,12 @@ class BertOutputAdaptersMixin(AdapterLayerBaseMixin):
 class BertLayerAdaptersMixin:
     """Adds adapters to the BertLayer module."""
 
+    def get_switch_regularization_loss(self):
+        return sum([
+            self.attention.output.get_switch_regularization_loss(),
+            self.output.get_switch_regularization_loss()
+        ])
+
     def add_switch(self, adapter_names, layer_idx: int):
         self.attention.output.add_switch(adapter_names, layer_idx)
         self.output.add_switch(adapter_names, layer_idx)
@@ -87,6 +93,9 @@ class BertLayerAdaptersMixin:
 
 class BertEncoderAdaptersMixin:
     """Adds adapters to the BertEncoder module."""
+
+    def get_switch_regularization_loss(self):
+        return sum(l.get_switch_regularization_loss() for l in self.layer)
 
     def add_switch_layer(self, adapter_names):
         logger.info(f"BERT: add switch {adapter_names}.")
@@ -206,6 +215,9 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
 
     def _delete_switch_layer(self, adapter_names):
         self.encoder.delete_switch_layer(adapter_names)
+
+    def get_switch_regularization_loss(self):
+        return self.encoder.get_switch_regularization_loss()
 
     def get_fusion_regularization_loss(self):
         reg_loss = 0.0

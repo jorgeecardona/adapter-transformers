@@ -314,6 +314,17 @@ class AdapterLayerBaseMixin(ABC):
 
         return hidden_states
 
+    def get_switch_regularization_loss(self):
+        reg_loss = 0.0
+        for switch_name in self.config.adapters.switches:
+            config: AdapterSwitchConfig = self.config.adapters.get_switch(switch_name)
+            weight = config.prob_regularization_weight
+            p = config.prob_regularization_power
+            for name, param in self.named_parameters():
+                if name.endswith(f"{switch_name}.switch_logits"):
+                    reg_loss += weight * torch.mean(torch.softmax(param, dim=-1).pow(p))
+        return reg_loss
+
     def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
 
         # Get the configuration of the switch.
