@@ -162,6 +162,12 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     prob_regularization_weight: float = 0.0
     prob_regularization_power: float = 0.5
 
+    # Selection regularization
+    selection_regularization_weights: List[float] = field(default_factory=list)
+
+    # Regularization options.
+    limit_input_1_after: int = None
+
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):
 

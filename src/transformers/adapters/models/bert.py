@@ -95,6 +95,19 @@ class BertEncoderAdaptersMixin:
     """Adds adapters to the BertEncoder module."""
 
     def get_switch_regularization_loss(self):
+
+        reg_loss = 0.0
+
+        for switch_name in self.config.adapters.switches:
+            config: AdapterSwitchConfig = self.config.adapters.get_switch(switch_name)
+            if config.limit_input_1_after is not None:
+                reg_loss -= config.limit_input_1_after
+                for name, param in self.named_parameters():
+                    if name.endswith(f"{switch_name}.switch_logits"):
+                        prob = torch.softmax(param, dim=-1)
+                        reg_loss += prob[1]
+                return torch.nn.functional.relu(reg_loss)
+
         return sum(l.get_switch_regularization_loss() for l in self.layer)
 
     def add_switch_layer(self, adapter_names):

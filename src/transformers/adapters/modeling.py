@@ -51,7 +51,7 @@ class Activation_Function_Class(nn.Module):
         elif hidden_act.lower() == 'identity':
             self.f = lambda x: x
         elif hidden_act.lower() == 'sigmoid':
-            self.f = nn.functional.sigmoid
+            self.f = torch.sigmoid
         elif hidden_act.lower().startswith('rational:'):
             func_name = hidden_act.lower().split(':', 1)[1]
             self.f = Rational(
