@@ -48,6 +48,10 @@ class Activation_Function_Class(nn.Module):
             self.f = nn.functional.gelu
         elif hidden_act.lower() == "leakyrelu":
             self.f = nn.functional.leaky_relu
+        elif hidden_act.lower() == 'identity':
+            self.f = lambda x: x
+        elif hidden_act.lower() == 'sigmoid':
+            self.f = nn.functional.sigmoid
         elif hidden_act.lower().startswith('rational:'):
             func_name = hidden_act.lower().split(':', 1)[1]
             self.f = Rational(
