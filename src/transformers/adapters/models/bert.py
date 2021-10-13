@@ -101,14 +101,22 @@ class BertEncoderAdaptersMixin:
         for switch_name in self.config.adapters.switches:
             config: AdapterSwitchConfig = self.config.adapters.get_switch(switch_name)
             if config.limit_input_1_after is not None:
-                reg_loss -= config.limit_input_1_after
+                scale = config.limit_input_1_after_scale
+                weight = config.limit_input_1_after_weight
+                limit = config.limit_input_1_after
+                switch_loss = 0.0
                 for name, param in self.named_parameters():
                     if name.endswith(f"{switch_name}.switch_logits"):
                         prob = torch.softmax(param, dim=-1)
-                        reg_loss += prob[1]
-                return torch.nn.functional.relu(reg_loss)
+                        switch_loss += torch.sigmoid(scale * (prob[1] - 0.5))
 
-        return sum(l.get_switch_regularization_loss() for l in self.layer)
+                if isinstance(switch_loss, torch.Tensor):
+                    reg_loss +=  weight * torch.relu(switch_loss - limit)
+
+        for layer in self.layer:
+            reg_loss += layer.get_switch_regularization_loss()
+
+        return reg_loss
 
     def add_switch_layer(self, adapter_names):
         logger.info(f"BERT: add switch {adapter_names}.")
