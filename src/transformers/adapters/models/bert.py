@@ -111,7 +111,7 @@ class BertEncoderAdaptersMixin:
                         switch_loss += torch.sigmoid(scale * (prob[1] - 0.5))
 
                 if isinstance(switch_loss, torch.Tensor):
-                    reg_loss +=  weight * torch.relu(switch_loss - limit)
+                    reg_loss += weight * (switch_loss - limit)**2
 
         for layer in self.layer:
             reg_loss += layer.get_switch_regularization_loss()
