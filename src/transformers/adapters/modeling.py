@@ -50,6 +50,10 @@ class Activation_Function_Class(nn.Module):
             self.f = nn.functional.leaky_relu
         elif hidden_act.lower() == 'identity':
             self.f = lambda x: x
+        elif hidden_act.lower() == 'one':
+            def one(x):
+                return torch.ones_like(x)
+            self.f = one
         elif hidden_act.lower() == 'sigmoid':
             self.f = torch.sigmoid
         elif hidden_act.lower().startswith('rational:'):
