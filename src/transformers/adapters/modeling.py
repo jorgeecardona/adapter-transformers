@@ -97,7 +97,6 @@ class Adapter(nn.Module):
         self.add_layer_norm_after = add_layer_norm_after
         self.residual_before_ln = residual_before_ln
         self.skip_linear_layers = skip_linear_layers
-        self.blind_to_inputs = blind_to_inputs
 
         # list for all modules of the adapter, passed into nn.Sequential()
         seq_list = []
