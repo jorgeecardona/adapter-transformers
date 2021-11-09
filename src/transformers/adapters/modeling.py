@@ -6,6 +6,7 @@ from torch import nn
 
 from rational.torch import Rational
 
+from switch_activation import SwitchActivation
 
 from .configuration import (
     AdapterFusionConfig,
@@ -62,6 +63,9 @@ class Activation_Function_Class(nn.Module):
                 cuda=True, trainable=True, train_numerator=True,
                 train_denominator=True, version="A", approx_func=func_name
             )
+        elif hidden_act.lower().startswith('switch:'):
+            func_names = hidden_act.lower().split(':', 1)[1].split(',')
+            self.f = SwitchActivation(func_names)
 
     def forward(self, x):
         return self.f(x)
@@ -93,6 +97,7 @@ class Adapter(nn.Module):
         self.add_layer_norm_after = add_layer_norm_after
         self.residual_before_ln = residual_before_ln
         self.skip_linear_layers = skip_linear_layers
+        self.blind_to_inputs = blind_to_inputs
 
         # list for all modules of the adapter, passed into nn.Sequential()
         seq_list = []
