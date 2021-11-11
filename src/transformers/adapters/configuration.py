@@ -144,7 +144,7 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     temperature: bool = True
 
     # Switch strategy.
-    strategy: str = 'default'
+    strategy: str = 'global'
 
     # Fix some switch positions.
     fixed: Dict[int, int] = field(default_factory=dict)
@@ -169,6 +169,9 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     limit_input_1_after: int = None
     limit_input_1_after_weight: float = 0.1
     limit_input_1_after_scale: float = 10.0
+
+    # Simple regularization
+    simple_regularization_weight: float = None
 
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):
