@@ -37,7 +37,8 @@ class AdapterLayerBaseMixin(ABC):
     @property
     @abstractmethod
     def adapter_config_key(self):
-        """Gets the name of the key by which this adapter location is identified in the adapter configuration."""
+        """Gets the name of the key by which this adapter location is
+        identified in the adapter configuration."""
         pass
 
     @property
@@ -56,8 +57,11 @@ class AdapterLayerBaseMixin(ABC):
         self.adapter_switch_layer = nn.ModuleDict(dict())
 
     def add_adapter(self, adapter_name: str, layer_idx: int):
+        logger.info(f"Adding adapter {adapter_name} at layer {layer_idx}.")
         self.layer_idx = layer_idx
+
         adapter_config = self.config.adapters.get(adapter_name)
+
         if adapter_config and adapter_config.get(self.adapter_config_key, None):
             reduction_factor = adapter_config["reduction_factor"]
             if isinstance(reduction_factor, Mapping):
@@ -92,6 +96,8 @@ class AdapterLayerBaseMixin(ABC):
         logger.info(f"Add switch {adapter_names} at layer {layer_idx}.")
 
         self.layer_idx = layer_idx
+
+        # TODO: Add check for the location (adapter_config_key) of the inputs.
 
         if not isinstance(adapter_names, list):
             adapter_names = adapter_names.split(',')
@@ -178,6 +184,8 @@ class AdapterLayerBaseMixin(ABC):
             unfreeze_adapters: whether the adapters themselves should be unfreezed
             unfreeze_fusion: whether the adapter attention layer for the given adapters should be unfreezed
         """
+
+        logger.info(f"Enabling adapters at layer {self.layer_idx}")
 
         if unfreeze_adapters:
             for adapter_name in adapter_setup.flatten():
@@ -318,11 +326,15 @@ class AdapterLayerBaseMixin(ABC):
         reg_loss = 0.0
         for switch_name in self.config.adapters.switches:
             config: AdapterSwitchConfig = self.config.adapters.get_switch(switch_name)
+            sel_weights = torch.tensor(config.selection_regularization_weights)
             weight = config.prob_regularization_weight
             p = config.prob_regularization_power
             for name, param in self.named_parameters():
                 if name.endswith(f"{switch_name}.switch_logits"):
                     reg_loss += weight * torch.mean(torch.softmax(param, dim=-1).pow(p))
+                    if sel_weights.size() == param.size(0):
+                        reg_loss += torch.softmax(param, dim=-1) * sel_weights
+
         return reg_loss
 
     def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
@@ -330,12 +342,6 @@ class AdapterLayerBaseMixin(ABC):
         # Get the configuration of the switch.
         switch_config: AdapterSwitchConfig
         switch_config = self.config.adapters.get_switch(adapter_setup.name)
-
-        if switch_config.bug:
-            adapter_config = self.config.adapters.get(adapter_setup.last())
-            hidden_states, query, residual = self.get_adapter_preparams(
-                adapter_config, hidden_states, input_tensor
-            )
 
         if self.layer_idx in switch_config.fixed:
             return self._adapter_forward(
@@ -598,7 +604,6 @@ class AdapterLayerBaseMixin(ABC):
         """
         Called for each forward pass through adapters.
         """
-
         if hasattr(self.config, "adapters"):
             # First check for given arguments before falling back to defined setup
             adapter_setup = kwargs.pop("adapter_names", None)

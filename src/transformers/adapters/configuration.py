@@ -155,8 +155,10 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     # Probability for fixed probabilities.
     soft_fixed_prob: float = 0.9
 
-    # Activate the bug? REMOVE THIS!
-    bug: bool = False
+    # Regularization.
+    regularization: str = None
+    regularization_weight: float = None
+    regularization_inputs_costs: List[float] = field(default_factory=list)
 
     # Regularization weight and power
     prob_regularization_weight: float = 0.0

@@ -100,7 +100,30 @@ class BertEncoderAdaptersMixin:
 
         for switch_name in self.config.adapters.switches:
             config: AdapterSwitchConfig = self.config.adapters.get_switch(switch_name)
-            if config.limit_input_1_after is not None:
+
+            if config.regularization == 'square':
+                weight = config.regularization_weight
+                inputs_costs = torch.tensor(config.regularization_inputs_costs)
+
+                all_prob_1 = []
+                for name, param in self.named_parameters():
+                    if name.endswith(f"{switch_name}.switch_logits"):
+                        all_prob_1.append(torch.softmax(param, dim=-1)[1])
+
+                total_costs = torch.stack(all_prob_1) * inputs_costs
+
+                reg_loss += weight  * torch.mean(total_costs) ** 2
+
+            # Simple approach to regularization.
+            elif config.simple_regularization_weight is not None:
+                weight = config.simple_regularization_weight
+                all_prob_1 = []
+                for name, param in self.named_parameters():
+                    if name.endswith(f"{switch_name}.switch_logits"):
+                        all_prob_1.append(torch.softmax(param, dim=-1)[1])
+                reg_loss += weight  * torch.mean(torch.stack(all_prob_1)) ** 2
+
+            elif config.limit_input_1_after is not None:
                 scale = config.limit_input_1_after_scale
                 weight = config.limit_input_1_after_weight
                 limit = config.limit_input_1_after
@@ -113,8 +136,9 @@ class BertEncoderAdaptersMixin:
                 if isinstance(switch_loss, torch.Tensor):
                     reg_loss += weight * (switch_loss - limit)**2
 
-        for layer in self.layer:
-            reg_loss += layer.get_switch_regularization_loss()
+            else:
+                for layer in self.layer:
+                    reg_loss += layer.get_switch_regularization_loss()
 
         return reg_loss
 
