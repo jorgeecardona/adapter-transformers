@@ -109,9 +109,10 @@ class BertEncoderAdaptersMixin:
                     if name.endswith(f"{switch_name}.switch_logits"):
                         all_prob_1.append(torch.softmax(param, dim=-1))
 
-                inputs_costs.to(all_prob_1.device)
-                total_costs = torch.stack(all_prob_1) * inputs_costs
-                reg_loss += weight  * torch.mean(total_costs) ** 2
+                if len(all_prob_1) > 0:
+                    inputs_costs.to(all_prob_1[0].device)
+                    total_costs = torch.stack(all_prob_1) * inputs_costs
+                    reg_loss += weight  * torch.mean(total_costs) ** 2
 
             # Simple approach to regularization.
             elif config.simple_regularization_weight is not None:
