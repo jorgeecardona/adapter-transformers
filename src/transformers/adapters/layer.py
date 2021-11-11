@@ -98,6 +98,8 @@ class AdapterLayerBaseMixin(ABC):
         self.layer_idx = layer_idx
 
         # TODO: Add check for the location (adapter_config_key) of the inputs.
+        if self.adapter_config_key != 'output_adapter':
+            return
 
         if not isinstance(adapter_names, list):
             adapter_names = adapter_names.split(',')

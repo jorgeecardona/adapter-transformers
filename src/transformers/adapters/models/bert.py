@@ -108,7 +108,7 @@ class BertEncoderAdaptersMixin:
                 all_prob_1 = []
                 for name, param in self.named_parameters():
                     if name.endswith(f"{switch_name}.switch_logits"):
-                        all_prob_1.append(torch.softmax(param, dim=-1)[1])
+                        all_prob_1.append(torch.softmax(param, dim=-1))
 
                 total_costs = torch.stack(all_prob_1) * inputs_costs
 
