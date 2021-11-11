@@ -104,14 +104,13 @@ class BertEncoderAdaptersMixin:
             if config.regularization == 'square':
                 weight = config.regularization_weight
                 inputs_costs = torch.tensor(config.regularization_inputs_costs)
-
                 all_prob_1 = []
                 for name, param in self.named_parameters():
                     if name.endswith(f"{switch_name}.switch_logits"):
                         all_prob_1.append(torch.softmax(param, dim=-1))
 
+                inputs_costs.to(all_prob_1.device)
                 total_costs = torch.stack(all_prob_1) * inputs_costs
-
                 reg_loss += weight  * torch.mean(total_costs) ** 2
 
             # Simple approach to regularization.
