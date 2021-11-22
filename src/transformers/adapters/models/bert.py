@@ -110,31 +110,24 @@ class BertEncoderAdaptersMixin:
                         all_prob_1.append(torch.softmax(param, dim=-1))
 
                 if len(all_prob_1) > 0:
-                    inputs_costs.to(all_prob_1[0].device)
+                    inputs_costs = inputs_costs.to(all_prob_1[0].device)
                     total_costs = torch.stack(all_prob_1) * inputs_costs
-                    reg_loss += weight  * torch.mean(total_costs) ** 2
+                    reg_loss += weight * torch.mean(total_costs) ** 2
 
-            # Simple approach to regularization.
-            elif config.simple_regularization_weight is not None:
-                weight = config.simple_regularization_weight
+            elif config.regularization == 'relu':
+                weight = config.regularization_weight
+                bias = config.regularization_bias
+
+                inputs_costs = torch.tensor(config.regularization_inputs_costs)
                 all_prob_1 = []
                 for name, param in self.named_parameters():
                     if name.endswith(f"{switch_name}.switch_logits"):
-                        all_prob_1.append(torch.softmax(param, dim=-1)[1])
-                reg_loss += weight  * torch.mean(torch.stack(all_prob_1)) ** 2
+                        all_prob_1.append(torch.softmax(param, dim=-1))
 
-            elif config.limit_input_1_after is not None:
-                scale = config.limit_input_1_after_scale
-                weight = config.limit_input_1_after_weight
-                limit = config.limit_input_1_after
-                switch_loss = 0.0
-                for name, param in self.named_parameters():
-                    if name.endswith(f"{switch_name}.switch_logits"):
-                        prob = torch.softmax(param, dim=-1)
-                        switch_loss += torch.sigmoid(scale * (prob[1] - 0.5))
-
-                if isinstance(switch_loss, torch.Tensor):
-                    reg_loss += weight * (switch_loss - limit)**2
+                if len(all_prob_1) > 0:
+                    inputs_costs = inputs_costs.to(all_prob_1[0].device)
+                    total_costs = torch.stack(all_prob_1) * inputs_costs
+                    reg_loss += weight * torch.relu(torch.mean(total_costs) - bias)
 
             else:
                 for layer in self.layer:

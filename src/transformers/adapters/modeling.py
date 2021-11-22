@@ -414,13 +414,11 @@ class AdapterSwitch(nn.Module):
 
     fixed: int = None
 
-    def set_mode(self, mode: str):
-        self.mode = mode
-
     def __init__(
-            self,
-            config: AdapterSwitchConfig,
-            initial_logits: List[float] = []
+        self,
+        config: AdapterSwitchConfig,
+        initial_logits: List[float] = [],
+        dropout_rate: float = 0.8
     ):
         super().__init__()
 
@@ -440,8 +438,8 @@ class AdapterSwitch(nn.Module):
         # Distribution used.
         self.gumbel = torch.distributions.Gumbel(0, 1)
 
-        # Assume first hard mode.
-        self.set_mode('hard')
+        # Distribution for dropout.
+        self.dropout = torch.distributions.Binomial(probs=1.0 - self.config.dropout_rate)
 
     @property
     def probs(self):
@@ -451,7 +449,7 @@ class AdapterSwitch(nn.Module):
 
         batch_size, seq_length, num_classes, hidden_dim_size = x.size()
 
-        if not self.training and self.mode == 'hard':
+        if not self.training:
             idx = torch.argmax(self.switch_logits, dim=-1)
             return x[:, :, idx, :]
 
@@ -473,8 +471,11 @@ class AdapterSwitch(nn.Module):
 
         # Compute the output.
         if self.config.strategy == 'global':
-            return torch.einsum('ijkl,ik->ijl', x, weights)
+            y = torch.einsum('ijkl,ik->ijl', x, weights)
         elif self.config.strategy == 'seq_length':
-            return torch.einsum('ijkl,ijk->ijl', x, weights)
+            y = torch.einsum('ijkl,ijk->ijl', x, weights)
         else:
-            return torch.einsum('ijkl,ijlk->ijl', x, weights)
+            y = torch.einsum('ijkl,ijlk->ijl', x, weights)
+
+        dropout = self.dropout.sample([batch_size]).to(y.device)
+        return torch.einsum('ijk,i->ijk', y, dropout) / (1.0 - self.config.dropout_rate)

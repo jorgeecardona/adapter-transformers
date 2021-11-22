@@ -140,6 +140,9 @@ class AdapterConfig(BaseAdapterConfig):
 @dataclass
 class AdapterSwitchConfig(BaseAdapterConfig):
 
+    # Dropout rate.
+    dropout_rate: float = 0.0
+
     # Activate the temperature for the softmax.
     temperature: bool = True
 
@@ -160,20 +163,8 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     regularization_weight: float = None
     regularization_inputs_costs: List[float] = field(default_factory=list)
 
-    # Regularization weight and power
-    prob_regularization_weight: float = 0.0
-    prob_regularization_power: float = 0.5
-
-    # Selection regularization
-    selection_regularization_weights: List[float] = field(default_factory=list)
-
-    # Regularization options.
-    limit_input_1_after: int = None
-    limit_input_1_after_weight: float = 0.1
-    limit_input_1_after_scale: float = 10.0
-
-    # Simple regularization
-    simple_regularization_weight: float = None
+    # Regularization with ReLU.
+    regularization_bias: float = None
 
     @classmethod
     def load(cls, config: Union[dict, str], **kwargs):
