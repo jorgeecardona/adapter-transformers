@@ -83,7 +83,8 @@ class AdapterLayerBaseMixin(ABC):
                 add_layer_norm_after=adapter_config["ln_after"],
                 non_linearity=adapter_config["non_linearity"],
                 residual_before_ln=adapter_config["adapter_residual_before_ln"],
-                skip_linear_layers=adapter_config["skip_linear_layers"]
+                skip_linear_layers=adapter_config["skip_linear_layers"],
+                drop_skip_connections=adapter_config["drop_skip_connections"],
             )
             adapter.train(self.training)  # make sure training mode is consistent
             self.adapters[adapter_name] = adapter
@@ -158,9 +159,7 @@ class AdapterLayerBaseMixin(ABC):
 
         if self.layer_idx not in config.fixed:
             if adapter_setup.name in self.adapter_switch_layer:
-                self._unfreeze_module(
-                    self.adapter_switch_layer[adapter_setup.name]
-                )
+                self._unfreeze_module(self.adapter_switch_layer[adapter_setup.name])
 
         unfreeze_inputs = []
         if self.layer_idx not in config.fixed:
@@ -173,18 +172,20 @@ class AdapterLayerBaseMixin(ABC):
                 self._unfreeze_module(self.adapters[name])
 
     def enable_adapters(
-            self,
-            adapter_setup: AdapterCompositionBlock,
-            unfreeze_adapters: bool,
-            unfreeze_fusion: bool
+        self,
+        adapter_setup: AdapterCompositionBlock,
+        unfreeze_adapters: bool,
+        unfreeze_fusion: bool
     ):
         """
         Unfreezes a given list of adapters, the adapter fusion layer, or both
 
         Args:
-            adapter_names: names of adapters to unfreeze (or names of adapters part of the fusion layer to unfreeze)
+            adapter_names: names of adapters to unfreeze (or names of adapters
+                part of the fusion layer to unfreeze)
             unfreeze_adapters: whether the adapters themselves should be unfreezed
-            unfreeze_fusion: whether the adapter attention layer for the given adapters should be unfreezed
+            unfreeze_fusion: whether the adapter attention layer for the given
+                adapters should be unfreezed
         """
 
         logger.info(f"Enabling adapters at layer {self.layer_idx}")
@@ -197,9 +198,7 @@ class AdapterLayerBaseMixin(ABC):
         if unfreeze_fusion:
             if isinstance(adapter_setup, Fuse):
                 if adapter_setup.name in self.adapter_fusion_layer:
-                    self._unfreeze_module(
-                        self.adapter_fusion_layer[adapter_setup.name]
-                    )
+                    self._unfreeze_module(self.adapter_fusion_layer[adapter_setup.name])
             for sub_setup in adapter_setup:
                 if isinstance(sub_setup, Fuse):
                     if sub_setup.name in self.adapter_fusion_layer:
@@ -207,8 +206,22 @@ class AdapterLayerBaseMixin(ABC):
                             self.adapter_fusion_layer[sub_setup.name]
                         )
 
+    def _get_switch_preparams(
+        self, switch_config: AdapterSwitchConfig, hidden_states, input_tensor
+    ):
+        if switch_config.residual_before_ln:
+            residual = hidden_states
+        if switch_config.original_ln_before:
+            if self.transformer_layer_norm:
+                hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)
+            else:
+                hidden_states = hidden_states + input_tensor
+        if not switch_config.residual_before_ln:
+            residual = hidden_states
+        return hidden_states, residual
+
     def get_adapter_preparams(
-            self, adapter_config, hidden_states, input_tensor, fusion_config=None
+        self, adapter_config, hidden_states, input_tensor, fusion_config=None
     ):
         """
         Retrieves the hidden_states, query (for Fusion), and residual connection
@@ -248,6 +261,7 @@ class AdapterLayerBaseMixin(ABC):
         """
         Forwards the given input through the given stack of adapters.
         """
+
         for i, adapter_stack_layer in enumerate(adapter_setup):
 
             # Break if setup is too deep
@@ -308,18 +322,14 @@ class AdapterLayerBaseMixin(ABC):
         # second return value for fusion
         return hidden_states, None, input_tensor
 
-    def _adapter_forward(self, adapter_setup, hidden_states, input_tensor, lvl=0):
+    def _adapter_forward(self, adapter_setup, hidden_states, residual, lvl=0):
         if isinstance(adapter_setup, Stack):
             hidden_states, _, _ = self.adapter_stack(
-                adapter_setup, hidden_states, input_tensor, lvl=lvl + 1
+                adapter_setup, hidden_states, residual, lvl=lvl + 1
             )
 
         elif adapter_setup in self.adapters:
             adapter_layer = self.adapters[adapter_setup]
-            adapter_config = self.config.adapters.get(adapter_setup)
-            hidden_states, _, residual = self.get_adapter_preparams(
-                adapter_config, hidden_states, input_tensor
-            )
             hidden_states, _, _ = adapter_layer(hidden_states, residual_input=residual)
 
         return hidden_states
@@ -327,25 +337,26 @@ class AdapterLayerBaseMixin(ABC):
     def get_switch_regularization_loss(self):
         return 0.0
 
-    def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
+    def adapter_switch(self, adapter_setup: Switch, hidden_states, residual, lvl=0):
 
         # Get the configuration of the switch.
         switch_config: AdapterSwitchConfig
         switch_config = self.config.adapters.get_switch(adapter_setup.name)
 
-        if self.layer_idx in switch_config.fixed:
-            return self._adapter_forward(
-                adapter_setup[switch_config.fixed[self.layer_idx]],
-                hidden_states, input_tensor,
-                lvl
+        # Get the preparams if lvl=0.
+        if lvl == 0:
+            hidden_states, residual = self._get_switch_preparams(
+                switch_config, hidden_states, residual
             )
+        if self.layer_idx in switch_config.fixed:
+            f_input = adapter_setup[switch_config.fixed[self.layer_idx]]
+            return self._adapter_forward(f_input, hidden_states, residual, lvl + 1)
 
         outputs = []
-
-        for i, switch_input in enumerate(adapter_setup):
-            outputs.append(self._adapter_forward(
-                switch_input, hidden_states, input_tensor, lvl
-            ))
+        for i, s_input in enumerate(adapter_setup):
+            outputs.append(
+                self._adapter_forward(s_input, hidden_states, residual, lvl + 1)
+            )
 
         if len(outputs) == 1:
             hidden_states = outputs[0]
@@ -478,7 +489,9 @@ class AdapterLayerBaseMixin(ABC):
                 )
             orig_batch_size = hidden_states.shape[0] // adapter_setup.parallel_channels
 
-        hidden_states, _, residual = self.get_adapter_preparams(adapter_config, hidden_states, input_tensor)
+        hidden_states, _, residual = self.get_adapter_preparams(
+            adapter_config, hidden_states, input_tensor
+        )
 
         # sequentially feed different parts of the blown-up batch into different adapters
         children_hidden = []
@@ -533,7 +546,9 @@ class AdapterLayerBaseMixin(ABC):
             )
 
         adapter_config = self.config.adapters.get(adapter_setup.first())
-        hidden_states, _, residual = self.get_adapter_preparams(adapter_config, hidden_states, input_tensor)
+        hidden_states, _, residual = self.get_adapter_preparams(
+            adapter_config, hidden_states, input_tensor
+        )
         children_hidden = []
         for i, adapter_block in enumerate(adapter_setup):
             # compute ids of sequences thet should be passed to the ith adapter
@@ -647,15 +662,19 @@ class AdapterLayerBaseMixin(ABC):
                 hidden_states = self.adapter_switch(
                     adapter_setup, hidden_states, input_tensor
                 )
-
             else:
                 raise ValueError(f"Invalid adapter setup {adapter_setup}")
 
-            last_config = self.config.adapters.get(adapter_setup.last())
-            if last_config["original_ln_after"]:
-                hidden_states = hidden_states + input_tensor
-                if self.transformer_layer_norm:
-                    hidden_states = self.transformer_layer_norm(hidden_states)
+            if isinstance(adapter_setup, Switch):
+                switch_config = self.config.adapters.get_switch(adapter_setup.name)
+                if switch_config.original_ln_after:
+                    hidden_states = hidden_states + input_tensor
+            else:
+                last_config = self.config.adapters.get(adapter_setup.last())
+                if last_config["original_ln_after"]:
+                    hidden_states = hidden_states + input_tensor
+            if self.transformer_layer_norm:
+                hidden_states = self.transformer_layer_norm(hidden_states)
 
         elif self.transformer_layer_norm:
             hidden_states = self.transformer_layer_norm(hidden_states + input_tensor)

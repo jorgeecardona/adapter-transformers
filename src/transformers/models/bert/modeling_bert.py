@@ -526,7 +526,11 @@ class BertLayer(BertLayerAdaptersMixin, nn.Module):
             present_key_value = present_key_value + cross_attn_present_key_value
 
         layer_output = apply_chunking_to_forward(
-            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output, **kwargs
+            self.feed_forward_chunk,
+            self.chunk_size_feed_forward,
+            self.seq_len_dim,
+            attention_output,
+            **kwargs
         )
         outputs = (layer_output,) + outputs
 

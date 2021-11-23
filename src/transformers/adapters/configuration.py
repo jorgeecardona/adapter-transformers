@@ -88,6 +88,9 @@ class AdapterConfig(BaseAdapterConfig):
     cross_adapter: bool = False
     leave_out: List[int] = field(default_factory=list)
 
+    # Drop the skip-connections.
+    drop_skip_connections: bool = False
+
     # We want to emulate a simple form of immutability while keeping the
     # ability to add custom attributes.
     # Therefore, we don't allow changing attribute values if set once.
@@ -139,6 +142,11 @@ class AdapterConfig(BaseAdapterConfig):
 
 @dataclass
 class AdapterSwitchConfig(BaseAdapterConfig):
+
+    # Some extra params.
+    residual_before_ln: bool = True
+    original_ln_before: bool = True
+    original_ln_after: bool = True
 
     # Dropout rate.
     dropout_rate: float = 0.0

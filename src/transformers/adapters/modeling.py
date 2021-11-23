@@ -89,6 +89,7 @@ class Adapter(nn.Module):
         add_layer_norm_after=False,
         residual_before_ln=True,
         skip_linear_layers=False,
+        drop_skip_connections=False,
     ):
         super().__init__()
 
@@ -97,6 +98,7 @@ class Adapter(nn.Module):
         self.add_layer_norm_after = add_layer_norm_after
         self.residual_before_ln = residual_before_ln
         self.skip_linear_layers = skip_linear_layers
+        self.drop_skip_connections = drop_skip_connections
 
         # list for all modules of the adapter, passed into nn.Sequential()
         seq_list = []
@@ -157,7 +159,8 @@ class Adapter(nn.Module):
 
         # apply residual connection before layer norm if configured in this way
         if self.residual_before_ln:
-            output = output + residual_input
+            if not self.drop_skip_connections:
+                output = output + residual_input
 
         # apply layer norm if available
         if self.add_layer_norm_after:
@@ -165,7 +168,8 @@ class Adapter(nn.Module):
 
         # if residual should be applied after layer norm, apply it here
         if not self.residual_before_ln:
-            output = output + residual_input
+            if not self.drop_skip_connections:
+                output = output + residual_input
 
         return output, down, up
 
@@ -417,8 +421,7 @@ class AdapterSwitch(nn.Module):
     def __init__(
         self,
         config: AdapterSwitchConfig,
-        initial_logits: List[float] = [],
-        dropout_rate: float = 0.8
+        initial_logits: List[float] = []
     ):
         super().__init__()
 
