@@ -148,6 +148,9 @@ class AdapterSwitchConfig(BaseAdapterConfig):
     original_ln_before: bool = True
     original_ln_after: bool = True
 
+    # Drop the skip-connections.
+    drop_skip_connections: bool = False
+
     # Dropout rate.
     dropout_rate: float = 0.0
 

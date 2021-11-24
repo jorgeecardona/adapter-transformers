@@ -337,25 +337,25 @@ class AdapterLayerBaseMixin(ABC):
     def get_switch_regularization_loss(self):
         return 0.0
 
-    def adapter_switch(self, adapter_setup: Switch, hidden_states, residual, lvl=0):
+    def adapter_switch(self, adapter_setup: Switch, hidden_states, input_tensor, lvl=0):
 
         # Get the configuration of the switch.
         switch_config: AdapterSwitchConfig
         switch_config = self.config.adapters.get_switch(adapter_setup.name)
 
         # Get the preparams if lvl=0.
-        if lvl == 0:
-            hidden_states, residual = self._get_switch_preparams(
-                switch_config, hidden_states, residual
-            )
+        hidden_states, residual = self._get_switch_preparams(
+            switch_config, hidden_states, input_tensor
+        )
+
         if self.layer_idx in switch_config.fixed:
             f_input = adapter_setup[switch_config.fixed[self.layer_idx]]
-            return self._adapter_forward(f_input, hidden_states, residual, lvl + 1)
+            return self._adapter_forward(f_input, hidden_states, residual, lvl)
 
         outputs = []
         for i, s_input in enumerate(adapter_setup):
             outputs.append(
-                self._adapter_forward(s_input, hidden_states, residual, lvl + 1)
+                self._adapter_forward(s_input, hidden_states, residual, lvl)
             )
 
         if len(outputs) == 1:
@@ -668,7 +668,8 @@ class AdapterLayerBaseMixin(ABC):
             if isinstance(adapter_setup, Switch):
                 switch_config = self.config.adapters.get_switch(adapter_setup.name)
                 if switch_config.original_ln_after:
-                    hidden_states = hidden_states + input_tensor
+                    if not switch_config.drop_skip_connections:
+                        hidden_states = hidden_states + input_tensor
             else:
                 last_config = self.config.adapters.get(adapter_setup.last())
                 if last_config["original_ln_after"]:
