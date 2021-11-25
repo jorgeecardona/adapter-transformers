@@ -54,7 +54,7 @@ class AdapterLayerBaseMixin(ABC):
     def _init_adapter_modules(self):
         self.adapters = nn.ModuleDict(dict())
         self.adapter_fusion_layer = nn.ModuleDict(dict())
-        self.adapter_switch_layer = nn.ModuleDict(dict())
+        self.adapter_switch_layer: Dict[Any, AdapterSwitch] = nn.ModuleDict(dict())
 
     def add_adapter(self, adapter_name: str, layer_idx: int):
         logger.info(f"Adding adapter {adapter_name} at layer {layer_idx}.")
@@ -347,6 +347,12 @@ class AdapterLayerBaseMixin(ABC):
         hidden_states, residual = self._get_switch_preparams(
             switch_config, hidden_states, input_tensor
         )
+
+        # Actual switch.
+        _switch: AdapterSwitch = self.adapter_switch_layer[adapter_setup.name]
+        if _switch.fixed_idx is not None:
+            f_input = adapter_setup[switch_config.fixed[_switch.fixed_idx]]
+            return self._adapter_forward(f_input, hidden_states, residual, lvl)
 
         if self.layer_idx in switch_config.fixed:
             f_input = adapter_setup[switch_config.fixed[self.layer_idx]]

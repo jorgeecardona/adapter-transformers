@@ -418,6 +418,8 @@ class AdapterSwitch(nn.Module):
 
     fixed: int = None
 
+    fixed_idx: int = None
+
     def __init__(
         self,
         config: AdapterSwitchConfig,
@@ -448,13 +450,17 @@ class AdapterSwitch(nn.Module):
     def probs(self):
         return torch.softmax(self.switch_logits, dim=-1)
 
+    def train(self, mode: bool = True):
+        if not mode:
+            self.fixed_idx = torch.argmax(self.switch_logits, dim=-1).item()
+        else:
+            self.fixed_idx = None
+        return super().train(mode)
+
     def forward(self, x):
-
         batch_size, seq_length, num_classes, hidden_dim_size = x.size()
-
         if not self.training:
-            idx = torch.argmax(self.switch_logits, dim=-1)
-            return x[:, :, idx, :]
+            return x[:,:, self._fixed_idx, :]
 
         if self.config.strategy == 'global':
             sample_size = [batch_size, num_classes]
