@@ -351,7 +351,7 @@ class AdapterLayerBaseMixin(ABC):
         # Actual switch.
         _switch: AdapterSwitch = self.adapter_switch_layer[adapter_setup.name]
         if _switch.fixed_idx is not None:
-            f_input = adapter_setup[switch_config.fixed[_switch.fixed_idx]]
+            f_input = adapter_setup[_switch.fixed_idx]
             return self._adapter_forward(f_input, hidden_states, residual, lvl)
 
         if self.layer_idx in switch_config.fixed:
