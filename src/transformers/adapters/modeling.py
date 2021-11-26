@@ -434,11 +434,9 @@ class AdapterSwitch(nn.Module):
             'switch_logits', nn.Parameter(torch.tensor(initial_logits))
         )
 
-        # Initial value of temperature depends on config.
-        T = 1.0
-        if self.config["temperature"]:
-            T = 50.0
-        self.register_buffer('temperature', torch.tensor([T]))
+        # Initial value of temperature does not depends on config.
+        # An external callback is in charge of reducing this value.
+        self.register_buffer('temperature', torch.tensor([50.0]))
 
         # Distribution used.
         self.gumbel = torch.distributions.Gumbel(0, 1)
