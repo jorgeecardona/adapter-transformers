@@ -6,7 +6,10 @@ from torch import nn
 
 from rational.torch import Rational
 
-from switch_activation import SwitchActivation
+try:
+    from switch_activation import SwitchActivation
+except ModuleNotFoundError:
+    SwitchActivation = None
 
 from .configuration import (
     AdapterFusionConfig,
@@ -63,7 +66,7 @@ class Activation_Function_Class(nn.Module):
                 cuda=True, trainable=True, train_numerator=True,
                 train_denominator=True, version="A", approx_func=func_name
             )
-        elif hidden_act.lower().startswith('switch:'):
+        elif hidden_act.lower().startswith('switch:') and SwitchActivation is not None:
             func_names = hidden_act.lower().split(':', 1)[1].split(',')
             self.f = SwitchActivation(func_names)
 

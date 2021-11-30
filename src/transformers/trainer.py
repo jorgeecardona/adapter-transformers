@@ -1430,7 +1430,7 @@ class Trainer:
                 else:
                     logger.warning(
                         "You enabled PyTorch/XLA debug metrics but you don't have a TPU "
-                        "configured. Check your training configuration if this is unexpected."
+                        "configured. Check your training configiuration if this is unexpected."
                     )
             if self.control.should_training_stop:
                 break
