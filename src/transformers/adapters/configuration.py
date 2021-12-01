@@ -90,6 +90,7 @@ class AdapterConfig(BaseAdapterConfig):
 
     # Drop the skip-connections.
     drop_skip_connections: bool = False
+    drop_skip_connections_training_only: bool = False
 
     # We want to emulate a simple form of immutability while keeping the
     # ability to add custom attributes.

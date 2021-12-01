@@ -93,6 +93,7 @@ class Adapter(nn.Module):
         residual_before_ln=True,
         skip_linear_layers=False,
         drop_skip_connections=False,
+        drop_skip_connections_training_only=False
     ):
         super().__init__()
 
@@ -102,6 +103,7 @@ class Adapter(nn.Module):
         self.residual_before_ln = residual_before_ln
         self.skip_linear_layers = skip_linear_layers
         self.drop_skip_connections = drop_skip_connections
+        self.drop_skip_connections_training_only = drop_skip_connections_training_only
 
         # list for all modules of the adapter, passed into nn.Sequential()
         seq_list = []
@@ -162,7 +164,8 @@ class Adapter(nn.Module):
 
         # apply residual connection before layer norm if configured in this way
         if self.residual_before_ln:
-            if not self.drop_skip_connections:
+            if not self.drop_skip_connections or \
+               (not self.training and self.drop_skip_connections_training_only):
                 output = output + residual_input
 
         # apply layer norm if available
@@ -171,7 +174,8 @@ class Adapter(nn.Module):
 
         # if residual should be applied after layer norm, apply it here
         if not self.residual_before_ln:
-            if not self.drop_skip_connections:
+            if not self.drop_skip_connections or \
+               (not self.training and self.drop_skip_connections_training_only):
                 output = output + residual_input
 
         return output, down, up

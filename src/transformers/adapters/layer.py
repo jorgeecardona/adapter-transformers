@@ -85,6 +85,7 @@ class AdapterLayerBaseMixin(ABC):
                 residual_before_ln=adapter_config["adapter_residual_before_ln"],
                 skip_linear_layers=adapter_config["skip_linear_layers"],
                 drop_skip_connections=adapter_config["drop_skip_connections"],
+                drop_skip_connections_training_only=adapter_config["drop_skip_connections_training_only"]
             )
             adapter.train(self.training)  # make sure training mode is consistent
             self.adapters[adapter_name] = adapter
