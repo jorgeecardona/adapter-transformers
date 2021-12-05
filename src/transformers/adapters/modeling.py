@@ -480,9 +480,6 @@ class AdapterSwitch(nn.Module):
         # Compute the weights of the convex sum.
         weights = torch.softmax((g + self.switch_logits) / self.temperature[0], dim=-1)
 
-        if not self.training:
-            self.recent_weights = weights.detach().cpu().numpy()
-
         # Compute the output.
         if self.config.strategy == 'global':
             y = torch.einsum('ijkl,ik->ijl', x, weights)
@@ -491,5 +488,8 @@ class AdapterSwitch(nn.Module):
         else:
             y = torch.einsum('ijkl,ijlk->ijl', x, weights)
 
-        dropout = self.dropout.sample([batch_size]).to(y.device)
-        return torch.einsum('ijk,i->ijk', y, dropout) / (1.0 - self.config.dropout_rate)
+        if self.dropout_rate > 0.0:
+            dropout = self.dropout.sample([batch_size]).to(y.device)
+            y = torch.einsum('ijk,i->ijk', y, dropout) / (1.0 - self.config.dropout_rate)
+
+        return y
