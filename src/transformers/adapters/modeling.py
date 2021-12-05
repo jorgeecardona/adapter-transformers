@@ -488,7 +488,7 @@ class AdapterSwitch(nn.Module):
         else:
             y = torch.einsum('ijkl,ijlk->ijl', x, weights)
 
-        if self.dropout_rate > 0.0:
+        if self.config.dropout_rate > 0.0:
             dropout = self.dropout.sample([batch_size]).to(y.device)
             y = torch.einsum('ijk,i->ijk', y, dropout) / (1.0 - self.config.dropout_rate)
 
